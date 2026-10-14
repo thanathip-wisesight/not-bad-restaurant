@@ -1,0 +1,12 @@
+import { attachDatabasePool } from "@vercel/functions";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { Pool } from "pg";
+import * as schema from "./schema";
+
+// Module-level pool, idle connections closed before a Vercel instance suspends (design D2).
+export const pool = new Pool({ connectionString: process.env.DATABASE_URL, idleTimeoutMillis: 5000 });
+attachDatabasePool(pool);
+
+export const db = drizzle(pool, { schema });
+export type Db = typeof db;
+export type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
