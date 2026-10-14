@@ -21,14 +21,11 @@ schema: spec-driven
 
 # Per-operation guidance (optional)
 # Add advisory guidance for how apply and archive work should be conducted.
-Example:
-  operations:
+operations:
     proposal:
       guidance:
-        - use grill-me to check for completeness and clarity first.
-    archive:
-      guidance:
-        - Summarize the archive outcome before finishing
+        - use /grill-me to check for completeness and clarity first.
+
 
 context: |
   Bilingual artifacts: English files are the source of truth and the working copy.
