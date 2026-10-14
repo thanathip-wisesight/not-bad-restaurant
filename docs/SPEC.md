@@ -5,7 +5,8 @@ Plain-language summary of the main specs in `openspec/specs/` plus the deltas of
 | Change | Status | Capabilities |
 |---|---|---|
 | `add-customer-ordering-poc` | Archived 2026-10-14 into `openspec/specs/` (deploy 7.2 still open) | menu-browsing, ordering, order-tracking, payment, restaurant-console |
-| `console-desktop-layout` | Implemented | restaurant-console (layout additions) |
+| `console-desktop-layout` | Archived 2026-10-14 into `openspec/specs/` | restaurant-console (layout additions) |
+| `add-branches-and-console-login` | Planned, not implemented (summary will be added when applied) | restaurant-branches, console-access (new); menu-browsing, payment, restaurant-console (modified) |
 
 ## 1. Scope
 
@@ -121,7 +122,7 @@ A mobile web app for diners to order from their table, plus a staff console. It 
   It can be printed again at any time, including from history. It is a receipt, not a tax invoice.
 - **Bill history**: closed bills, newest first, with bill number, table, close time, total, and status. Each can be opened and printed.
 
-### Console layout (from `console-desktop-layout`)
+### Console layout
 
 The console is mainly used on a tablet or cashier PC, and still works on a phone.
 
@@ -149,4 +150,4 @@ The console is mainly used on a tablet or cashier PC, and still works on a phone
 - Phones and the console check the server every 5 seconds. Vercel functions cannot hold open the live connections that push updates would need.
 - Details:
   - `openspec/changes/archive/2026-10-14-add-customer-ordering-poc/design.md`
-  - `openspec/changes/console-desktop-layout/design.md`
+  - `openspec/changes/archive/2026-10-14-console-desktop-layout/design.md`
