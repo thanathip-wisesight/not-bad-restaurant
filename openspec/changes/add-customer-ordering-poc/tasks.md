@@ -3,8 +3,8 @@
 ## 1. Setup
 
 - [ ] 1.1 Scaffold Next.js (App Router, TypeScript) app in repo root; verify `npm run dev` serves a page
-- [ ] 1.2 Add `drizzle-orm`, `@neondatabase/serverless`, `drizzle-kit`, `vitest`; verify `npm run build` and `npx vitest run` (zero tests) succeed
-- [ ] 1.3 Configure `DATABASE_URL` / `TEST_DATABASE_URL` via `.env.local` with an `.env.example`; verify a DB ping script connects
+- [ ] 1.2 Add `drizzle-orm`, `pg`, `@vercel/functions`, `drizzle-kit`, `vitest`, plus a `docker-compose.yml` with local Postgres; verify `npm run build` and `npx vitest run` (zero tests) succeed
+- [ ] 1.3 Configure `DATABASE_URL` / `TEST_DATABASE_URL` via `.env.local` with an `.env.example`; verify a DB ping script connects to the Docker Postgres
 
 ## 2. Data model and seed
 

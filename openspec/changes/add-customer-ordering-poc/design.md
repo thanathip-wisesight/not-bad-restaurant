@@ -21,9 +21,9 @@ Greenfield repo; nothing exists besides `requirements.md` and OpenSpec scaffoldi
 Routes: `/t/[table]` (menu + cart + orders tabs), `/t/[table]/pay` (stub bank picker), `/console` (tables overview), `/console/history`, `/console/bills/[id]/print`. Mutations via Route Handlers under `/api/*` returning JSON, so polling clients and actions share one API.
 *Alternative:* separate console app – rejected, doubles deploy for no gain.
 
-### D2. Postgres on Neon (Vercel Marketplace) + Drizzle ORM
-Use `drizzle-orm/neon-serverless` (Pool over WebSocket) because cart confirmation needs an interactive transaction; the HTTP driver does not support interactive transactions.
-*Alternative:* Prisma – heavier client and cold starts; no team preference stated.
+### D2. Postgres (Neon in production) + Drizzle ORM over node-postgres
+Use `drizzle-orm/node-postgres` with a module-level `pg` Pool, registered with `attachDatabasePool` from `@vercel/functions` (Vercel Fluid compute guidance). The same driver talks to local Docker Postgres for dev/tests and to Neon in production, and supports interactive transactions (D6, D7).
+*Alternatives:* `neon-serverless` (WebSocket) – cannot reach plain local Postgres without an extra proxy; `neon-http` – no interactive transactions. Prisma – heavier client and cold starts; no team preference stated.
 
 ### D3. Data model
 ```
