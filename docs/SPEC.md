@@ -7,6 +7,7 @@ Plain-language summary of the main specs in `openspec/specs/` plus the deltas of
 | `add-customer-ordering-poc` | Archived 2026-10-14 into `openspec/specs/` (deploy 7.2 still open) | menu-browsing, ordering, order-tracking, payment, restaurant-console |
 | `console-desktop-layout` | Archived 2026-10-14 into `openspec/specs/` | restaurant-console (layout additions) |
 | `add-branches-and-console-login` | Archived 2026-10-14 into `openspec/specs/` | restaurant-branches, console-access (new); menu-browsing, payment, restaurant-console (modified) |
+| `add-order-history-voids-and-batch-actions` | Planned, not implemented (summary will be added when applied) | order-history (new); order-tracking, payment, restaurant-console (modified) |
 
 ## 1. Scope
 

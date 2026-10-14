@@ -21,7 +21,15 @@ This can now be hosted on free-tier Vercel
 
 Whenever the whole bill orders is completed and the order is "cleared", the orders are moved to *finished* status in database with each order status kept(finished, canceled, specia). This journey is only for data and telemetry purpose. 
 
-The history of orders can be searched and processed by item key, branch code for telemetry purpose, such as finding a popular menu, most problematic menu 
+
+**amended** History should keep all status change and log time, too. Such as pending at 2026-10-10 12:00:00, in-progress at 2026-10-10 12:01:00, served at 2026-10-10 12:07:00.
+
+
+
+The history of orders can be searched and processed by item key, branch code for telemetry purpose, such as finding a popular menu, most problematic menu.
+
+
+d
 
 
 -------
@@ -40,6 +48,10 @@ This usecase is an extreme one, which can really happen.
 
 
 A personel can actually confirm to void a pending order without request from a customer, or an in-progress order. Both cases should prompt the personel to add note about the reason to void it. The voided order in this case is moved to status similar to "canceled", but disticted.
+
+### J3. Staff can batch update status of many orders at once.
+
+A personal can select multiple orders to be updated in batch, such as updating Fried Rice and Crispy Pork to in-progress att he same time. Both item orders should be updated with the same time log. This also include this new J2. journy
 
 
 #### global remark
