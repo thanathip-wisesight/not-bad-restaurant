@@ -7,7 +7,7 @@ Plain-language summary of the main specs in `openspec/specs/` plus the deltas of
 | `add-customer-ordering-poc` | Archived 2026-10-14 into `openspec/specs/` (deploy 7.2 still open) | menu-browsing, ordering, order-tracking, payment, restaurant-console |
 | `console-desktop-layout` | Archived 2026-10-14 into `openspec/specs/` | restaurant-console (layout additions) |
 | `add-branches-and-console-login` | Archived 2026-10-14 into `openspec/specs/` | restaurant-branches, console-access (new); menu-browsing, payment, restaurant-console (modified) |
-| `add-order-history-voids-and-batch-actions` | Implemented, not yet archived (summary will be added at archive) | order-history (new); order-tracking, payment, restaurant-console (modified) |
+| `add-order-history-voids-and-batch-actions` | Archived 2026-10-14 into `openspec/specs/` | order-history (new); menu-browsing, order-tracking, payment, restaurant-console (modified) |
 
 ## 1. Scope
 
@@ -30,7 +30,7 @@ A mobile web app for diners to order from their table, plus a staff console, for
 
 ## 3. Menu (menu-browsing)
 
-- Each table's QR code opens `/b/<branch code>/t/<table number>`, e.g. `/b/SIAM/t/5`. The page shows the branch name and table number. An unknown branch or table, or an old `/t/<n>` link, shows "table not found".
+- Each table's QR code opens `/b/<branch code>/t/<table number>`, e.g. `/b/SIAM/t/5`. The page shows the branch name and table number. An unknown branch or table shows "table not found". Old `/t/<n>` links are retired and get the standard "page not found" screen.
 - Scanning alone does not start a visit.
 - Six categories, in this order: Main, A la carte, Soup, Special, Dessert, Drink.
 - Each dish shows its Thai and English names, a picture or placeholder, its price in whole Baht, and an **Add** button.
@@ -78,29 +78,34 @@ A mobile web app for diners to order from their table, plus a staff console, for
 | Cancel requested | Cancelled | Staff (confirm cancel) |
 | Cancel requested | Pending | Staff (reject cancel) |
 | In progress | Served | Staff (serve) |
-| Pending or In progress | Cancelled | Staff (void) |
+| Pending or In progress | Voided | Staff (void, **reason required**, at least 3 characters) |
+| Served | Finished | System, when the bill closes |
+| Pending, Cancel requested, or In progress | Voided ("table cleared") | System, when staff clear the table |
 
-  Every other change is refused. A dish with a cancel request **cannot be started** until staff resolve it, and customers cannot take a cancel request back.
+  Every other change is refused. A dish with a cancel request **cannot be started** until staff resolve it, and customers cannot take a cancel request back. Confirming or rejecting a cancel request can carry an optional remark.
+- **Cancelled** means the customer asked and staff agreed. **Voided** means staff removed the dish on their own (e.g. burnt, dropped). Customers see both as "Cancelled" and never see staff reasons or remarks.
 - The **Orders** tab shows every dish sent from **all** phones at the table: name, extras, note, price, and status. It also shows the bill number (e.g. `SIAM-T05-0042`) and the running total of served dishes.
-- Changes made by staff or other phones appear within 10 seconds, with no reload.
+- Changes made by staff or other phones appear within 15 seconds, with no reload.
+- To stay within free hosting limits, a phone stops checking for updates while its table has no open bill and its own cart is empty. It starts again as soon as the customer touches the screen or comes back to the page.
 - Customers see the Cancel button only on Pending dishes. If the kitchen started a dish before the cancel request arrived, the customer is told it is already being prepared.
 
 ## 6. Paying (payment)
 
 - **Pay** works only when:
   1. this phone's cart is empty (confirm or remove what is left), and
-  2. every dish is served or cancelled; anything else must be sorted out with staff first.
+  2. every dish is served, cancelled, or voided; anything else must be sorted out with staff first.
 
   Otherwise the app says what is blocking payment.
 - If other phones at the table still hold unsent dishes, a warning says how many will be discarded and asks the table to sort it out first. Payment goes ahead only after **Pay anyway**. Dismissing the warning changes nothing. Staff see the same warning when marking a bill paid.
-- The bill total is the sum of served dishes, extras included. Cancelled dishes count as zero.
+- The bill total is the sum of served dishes, extras included. Cancelled and voided dishes count as zero.
 - Each visit has a bill number, unique across all visits, made of the branch code, the table number, and a sequence (e.g. `SIAM-T05-0042`). Bills issued before branches existed keep their old form (e.g. `T05-0042`).
 - Two ways to pay:
   - **QR (simulated):** pick a pretend bank app. The bill is marked paid and the menu shows a success message. No real payment system is involved.
   - **Cashier:** show the bill number at the counter; staff mark it paid in that branch's console.
 - Once a bill is paid:
   - the visit ends automatically
-  - every phone at the table sees an empty Orders tab within 10 seconds
+  - served dishes become **finished** (the total does not change)
+  - every phone at the table sees an empty Orders tab within 15 seconds
   - all unsent carts are thrown away
   - the bill is kept in history permanently
   - the next dish added starts a new visit with a new bill number
@@ -111,15 +116,16 @@ Everything below applies to the **selected branch only**; other branches' tables
 
 ### What staff can do (all screen sizes)
 
-- See every table of the branch, either free or with its open bill: bill number, status, total, and each dish's name, extras, note, and status. Cancel requests are highlighted. The view refreshes within 10 seconds.
-- Per dish, only the buttons valid for its status are offered: **Start**, **Serve**, **Void**, **Confirm cancel**, **Reject cancel**.
+- See every table of the branch, either free or with its open bill: bill number, status, total, and each dish's name, extras, note, and status. Cancel requests are highlighted. The view refreshes within 15 seconds.
+- Per dish, only the buttons valid for its status are offered: **Start**, **Serve**, **Void** (asks for a reason), **Confirm cancel** and **Reject cancel** (each takes an optional remark).
+- **Batch actions:** staff can tick several dishes, but only of the **same table and the same status**, on the board, in the side drawer, or on the phone list, each with **Select all**. A bar at the bottom offers the actions valid for that status and applies one to all ticked dishes at once, with the same time. A batch Void asks for one reason for all of them. If any ticked dish changed status in the meantime, nothing changes and the console names that dish.
 - **Mark paid** (cashier payments):
-  - only allowed when every dish is served or cancelled; otherwise the unresolved dishes are named
+  - only allowed when every dish is served, cancelled, or voided; otherwise the unresolved dishes are named
   - same effect as a customer payment, including the unsent-dishes warning
-- **Clear table** (walk-outs, abandoned tables): asks for confirmation. An unpaid bill is recorded as *voided*. The visit closes and the bill stays in history.
+- **Clear table** (walk-outs, abandoned tables): asks for confirmation. An unpaid bill is recorded as *voided*, and any dish not yet served is voided with the reason "table cleared". The visit closes and the bill stays in history.
 - **Print bill**: opens the browser print dialog with a receipt showing:
   - restaurant name, branch name, table, bill number, date and time
-  - served dishes with extras and prices
+  - served (or, after closing, finished) dishes with extras and prices; cancelled and voided dishes are left off
   - total
   - paid / unpaid / voided
 
@@ -132,15 +138,15 @@ The console is mainly used on a tablet or cashier PC, and still works on a phone
 
 - **Tablet and wider (768 px and up): kitchen board.**
   - Four columns, in this order: **Cancel requested | Pending | In progress | Served**. Each holds the dishes of all open bills in that status.
-  - Cancelled dishes are not on the board.
+  - Cancelled and voided dishes are not on the board.
   - Cancel requested, Pending, and In progress list the longest-waiting dish first. Served lists the most recently served first.
   - Column headers stay visible while scrolling and show counts. The Cancel requested header is highlighted whenever its count is above zero.
   - Each dish card shows the table number (large), dish, extras, note, minutes since its last status change (e.g. "4 min"), and the valid action buttons.
   - **Table strip** above the board, one chip per table in number order:
     - free tables are grey and labelled free
-    - occupied tables show bill number, served total, and how many dishes are not yet served or cancelled
+    - occupied tables show bill number, served total, and how many dishes are not yet served, cancelled, or voided
   - Tapping an occupied chip opens a **side drawer**:
-    - contents: all that table's dishes (including cancelled) with their actions, plus **Mark paid**, **Print bill**, **Clear table**
+    - contents: all that table's dishes (including cancelled and voided, with the staff reason or remark) with their actions, plus **Mark paid**, **Print bill**, **Clear table**
     - stays open while the screen refreshes
     - closes when the bill closes or staff dismiss it
 - **Phone (below 768 px):** the per-table card list, with a count bar at the top (cancel requests highlighted, pending, in progress).
@@ -163,14 +169,26 @@ The console is mainly used on a tablet or cashier PC, and still works on a phone
 - Staff can only see and act on branches they belong to. Opening another branch shows "No access to this branch", and the API refuses it (403). A dish or bill id from another branch is treated as not found, and nothing changes.
 - Accounts come only from the seed: `siam.staff` (SIAM) and `area.manager` (SIAM and ASOK). There is no sign-up or account administration.
 
-## 10. Technical choices (summary)
+## 10. Order history (order-history)
+
+- Every status change of every dish is recorded: from which status to which, when, who did it (the staff member, the customer's phone, or the system), and any reason or remark. Records are never edited or deleted. Changes made together in one batch share the same time.
+- Example: Pad Thai confirmed at 12:00:00, started at 12:01:00, served at 12:07:00, finished when the bill was paid at 12:30:00.
+- History starts with this release; dishes from before it have no history.
+- Staff of a branch can read the history as JSON (no report screen yet):
+  - **Dish counts:** per menu item, how many were ordered, finished, cancelled, and voided, to spot popular and problematic dishes.
+  - **Dish timelines:** individual dishes with bill number, table, current status, and their full change history; can be filtered to one menu item.
+  - Both take a date range (by when the dish was ordered; default last 30 days, at most 366 days). They need a staff login and only show that branch.
+
+## 11. Technical choices (summary)
 
 - Next.js app on Vercel, using Cache Components.
 - Postgres: Neon in production, Docker locally. Accessed through Drizzle and the `pg` driver.
 - Seed data: branches SIAM (10 tables) and ASOK (6 tables), 60 Thai dishes, two staff accounts. `--users-only` adds branches and accounts to an existing database without touching its history.
 - Login uses only Node's built-in `crypto` (scrypt for passwords). The session cookie can't be read by page scripts, and only a hash of it is stored.
-- Phones and the console check the server every 5 seconds. Vercel functions cannot hold open the live connections that push updates would need.
+- Phones and the console check the server every 10 seconds (idle phones not at all). Vercel functions cannot hold open the live connections that push updates would need.
+- Free hosting: Vercel Hobby (1,000,000 function calls a month; personal, non-commercial use only) and Neon Free (about 400 database hours a month). The README has the budget.
 - Details:
   - `openspec/changes/archive/2026-10-14-add-customer-ordering-poc/design.md`
   - `openspec/changes/archive/2026-10-14-console-desktop-layout/design.md`
   - `openspec/changes/archive/2026-10-14-add-branches-and-console-login/design.md`
+  - `openspec/changes/archive/2026-10-14-add-order-history-voids-and-batch-actions/design.md`
