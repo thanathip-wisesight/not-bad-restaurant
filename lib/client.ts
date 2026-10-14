@@ -1,5 +1,5 @@
 // Browser-only helpers: device identity (design D9), API calls, polling (D10).
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 
 function uuidv4(): string {
   if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
@@ -87,6 +87,20 @@ export function usePolling(fn: () => void, ms = 5000) {
       document.removeEventListener("visibilitychange", tick);
     };
   }, [ms]);
+}
+
+// True while the screen is landscape; server snapshot is portrait (design D15).
+const LANDSCAPE = "(orientation: landscape)";
+export function useLandscape(): boolean {
+  return useSyncExternalStore(
+    (onChange) => {
+      const m = matchMedia(LANDSCAPE);
+      m.addEventListener("change", onChange);
+      return () => m.removeEventListener("change", onChange);
+    },
+    () => matchMedia(LANDSCAPE).matches,
+    () => false,
+  );
 }
 
 export { baht } from "./format";

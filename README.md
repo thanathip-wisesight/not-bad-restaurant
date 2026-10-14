@@ -1,7 +1,7 @@
 # Not Bad Restaurant – QR ordering demo
 
 Demo/POC: customers order from their table by phone; staff run a simple console. No auth, no real payment.
-Plain-language spec: [docs/SPEC.md](docs/SPEC.md). OpenSpec change: [openspec/changes/add-customer-ordering-poc](openspec/changes/add-customer-ordering-poc).
+Plain-language spec: [docs/SPEC.md](docs/SPEC.md). Specs: [openspec/specs](openspec/specs) (archived change: [2026-10-14-add-customer-ordering-poc](openspec/changes/archive/2026-10-14-add-customer-ordering-poc)).
 
 ## Run locally
 

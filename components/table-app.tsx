@@ -11,7 +11,7 @@ import {
   type Category,
   type ItemStatus,
 } from "@/lib/domain";
-import { ApiError, api, baht, readLocal, subscribeLocal, usePolling, writeLocal } from "@/lib/client";
+import { ApiError, api, baht, readLocal, subscribeLocal, useLandscape, usePolling, writeLocal } from "@/lib/client";
 import type { CartLineDto, MenuItemDto, OrderItemDto } from "@/lib/service";
 
 type Cart = { lines: CartLineDto[]; total: number };
@@ -60,6 +60,9 @@ export function TableApp({ tableNumber, menu }: { tableNumber: number; menu: Men
     () => "modern",
   );
   const paid = useSearchParams().has("paid");
+  // Traditional renders only in landscape; upright phones fall back to Modern (menu-browsing spec, D15).
+  const landscape = useLandscape();
+  const traditional = layout === "traditional" && landscape;
 
   const refresh = async () => {
     try {
@@ -119,6 +122,98 @@ export function TableApp({ tableNumber, menu }: { tableNumber: number; menu: Men
   const cartCount = cart.lines.reduce((n, l) => n + l.qty, 0);
   const activeOrders = orders?.items.filter((i) => i.status !== "cancelled").length ?? 0;
 
+  const banners = (
+    <>
+      {paid && (
+        <div role="status" className="mx-4 mt-3 flex justify-between rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-900 shadow">
+          <span>Payment successful. Thank you!</span>
+          <button onClick={() => router.replace(`/t/${tableNumber}`)} aria-label="Dismiss">
+            ✕
+          </button>
+        </div>
+      )}
+      {notice && (
+        <div
+          role="status"
+          className={`mx-4 mt-3 flex items-start justify-between gap-2 rounded-lg px-3 py-2 text-sm shadow ${notice.kind === "ok" ? "bg-emerald-50 text-emerald-900" : "bg-amber-50 text-amber-900"}`}
+        >
+          <span>{notice.text}</span>
+          <button onClick={() => setNotice(null)} aria-label="Dismiss">
+            ✕
+          </button>
+        </div>
+      )}
+    </>
+  );
+
+  const cartView = (
+    <CartView
+      cart={cart}
+      onEdit={(line) => setSheet({ item: menu.find((m) => m.id === line.menuItemId)!, line })}
+      onRemove={(line) => run(() => api(`${base}/cart/${line.id}`, "DELETE"))}
+      onConfirm={confirmOrder}
+    />
+  );
+  const ordersView = (
+    <OrdersView
+      orders={orders}
+      onCancel={requestCancel}
+      onPay={startPay}
+      payWarning={payWarning}
+      onPayAnyway={() => router.push(`/t/${tableNumber}/pay?force=1`)}
+      onDismissWarning={() => setPayWarning(null)}
+    />
+  );
+  const optionsSheet = sheet && (
+    <OptionsSheet
+      sheet={sheet}
+      onCancel={() => setSheet(null)}
+      onSubmit={(input) =>
+        run(async () => {
+          if (sheet.line) await api(`${base}/cart/${sheet.line.id}`, "PATCH", input);
+          else await api(`${base}/cart`, "POST", input);
+          setSheet(null);
+        }, sheet.line ? "Cart updated." : "Added to cart.")
+      }
+    />
+  );
+
+  if (traditional)
+    return (
+      <div className="flex h-dvh flex-col overflow-hidden bg-white">
+        <TraditionalMenu
+          menu={menu}
+          tableNumber={tableNumber}
+          cartCount={cartCount}
+          orderCount={activeOrders}
+          onOpen={setTab}
+          onModern={switchLayout}
+          onAdd={(item) => setSheet({ item })}
+        />
+        <div className="pointer-events-none fixed inset-x-0 top-10 z-40 mx-auto max-w-md [&>*]:pointer-events-auto">{banners}</div>
+        {tab !== "menu" && (
+          // Overlay above the pager: the pager stays mounted, so closing returns to the same page.
+          <div className="fixed inset-0 z-30 flex justify-center bg-black/40 p-2" onClick={() => setTab("menu")}>
+            <div
+              role="dialog"
+              aria-label={tab === "cart" ? "Cart" : "Orders"}
+              className="h-full w-full max-w-lg overflow-y-auto rounded-xl bg-white"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="sticky top-0 z-10 flex items-center justify-between border-b bg-white px-4 py-2">
+                <h2 className="font-semibold">{tab === "cart" ? "Cart" : "Orders"}</h2>
+                <button onClick={() => setTab("menu")} aria-label="Close">
+                  ✕
+                </button>
+              </div>
+              {tab === "cart" ? cartView : ordersView}
+            </div>
+          </div>
+        )}
+        {optionsSheet}
+      </div>
+    );
+
   return (
     <div className="mx-auto flex min-h-dvh max-w-md flex-col bg-white">
       <header className="sticky top-0 z-20 flex items-center justify-between border-b bg-white px-4 py-3">
@@ -134,49 +229,17 @@ export function TableApp({ tableNumber, menu }: { tableNumber: number; menu: Men
         {tab !== "menu" && orders?.session && <span className="text-sm text-stone-500">Bill {orders.session.billNo}</span>}
       </header>
 
-      {paid && (
-        <div role="status" className="mx-4 mt-3 flex justify-between rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
-          <span>Payment successful. Thank you!</span>
-          <button onClick={() => router.replace(`/t/${tableNumber}`)} aria-label="Dismiss">
-            ✕
-          </button>
-        </div>
-      )}
-
-      {notice && (
-        <div
-          role="status"
-          className={`mx-4 mt-3 flex items-start justify-between gap-2 rounded-lg px-3 py-2 text-sm ${notice.kind === "ok" ? "bg-emerald-50 text-emerald-900" : "bg-amber-50 text-amber-900"}`}
-        >
-          <span>{notice.text}</span>
-          <button onClick={() => setNotice(null)} aria-label="Dismiss">
-            ✕
-          </button>
-        </div>
+      {banners}
+      {tab === "menu" && layout === "traditional" && (
+        <p role="note" className="mx-4 mt-3 rounded-lg bg-orange-50 px-3 py-2 text-sm text-orange-900">
+          ↻ Turn your phone sideways to see the Traditional menu.
+        </p>
       )}
 
       <main className="flex-1 pb-20">
-        {tab === "menu" && (
-          <MenuView menu={menu} layout={layout} onAdd={(item) => setSheet({ item })} />
-        )}
-        {tab === "cart" && (
-          <CartView
-            cart={cart}
-            onEdit={(line) => setSheet({ item: menu.find((m) => m.id === line.menuItemId)!, line })}
-            onRemove={(line) => run(() => api(`${base}/cart/${line.id}`, "DELETE"))}
-            onConfirm={confirmOrder}
-          />
-        )}
-        {tab === "orders" && (
-          <OrdersView
-            orders={orders}
-            onCancel={requestCancel}
-            onPay={startPay}
-            payWarning={payWarning}
-            onPayAnyway={() => router.push(`/t/${tableNumber}/pay?force=1`)}
-            onDismissWarning={() => setPayWarning(null)}
-          />
-        )}
+        {tab === "menu" && <MenuView menu={menu} onAdd={(item) => setSheet({ item })} />}
+        {tab === "cart" && cartView}
+        {tab === "orders" && ordersView}
       </main>
 
       <nav className="fixed inset-x-0 bottom-0 z-20 mx-auto grid max-w-md grid-cols-3 border-t bg-white">
@@ -198,47 +261,20 @@ export function TableApp({ tableNumber, menu }: { tableNumber: number; menu: Men
         ))}
       </nav>
 
-      {sheet && (
-        <OptionsSheet
-          sheet={sheet}
-          onCancel={() => setSheet(null)}
-          onSubmit={(input) =>
-            run(async () => {
-              if (sheet.line) await api(`${base}/cart/${sheet.line.id}`, "PATCH", input);
-              else await api(`${base}/cart`, "POST", input);
-              setSheet(null);
-            }, sheet.line ? "Cart updated." : "Added to cart.")
-          }
-        />
-      )}
+      {optionsSheet}
     </div>
   );
 }
 
 // ---------- menu ----------
 
-function MenuView({ menu, layout, onAdd }: { menu: MenuItemDto[]; layout: Layout; onAdd: (i: MenuItemDto) => void }) {
+function MenuView({ menu, onAdd }: { menu: MenuItemDto[]; onAdd: (i: MenuItemDto) => void }) {
   const [active, setActive] = useState<Category>("main");
-  const pagerRef = useRef<HTMLDivElement>(null);
-  const pages = useMemo(() => paginateByCategory(menu), [menu]);
   const present = CATEGORIES.filter((c) => menu.some((m) => m.category === c));
 
   const jump = (c: Category) => {
     setActive(c);
-    if (layout === "modern") {
-      document.getElementById(`cat-${c}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
-    } else {
-      const el = pagerRef.current;
-      const index = pages.findIndex((p) => p.category === c);
-      if (el && index >= 0) el.scrollTo({ left: index * el.clientWidth, behavior: "smooth" });
-    }
-  };
-
-  const onPagerScroll = () => {
-    const el = pagerRef.current;
-    if (!el) return;
-    const page = pages[Math.round(el.scrollLeft / el.clientWidth)];
-    if (page) setActive(page.category);
+    document.getElementById(`cat-${c}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
   return (
@@ -254,65 +290,155 @@ function MenuView({ menu, layout, onAdd }: { menu: MenuItemDto[]; layout: Layout
           </button>
         ))}
       </div>
-
-      {layout === "modern" ? (
-        <div className="px-4">
-          {present.map((c) => (
-            <section key={c} id={`cat-${c}`} className="scroll-mt-28 pt-4">
-              <h2 className="mb-2 font-semibold">{CATEGORY_LABELS[c]}</h2>
-              <div className="grid grid-cols-2 gap-3">
-                {menu
-                  .filter((m) => m.category === c)
-                  .map((m) => (
-                    <ItemCard key={m.id} item={m} onAdd={onAdd} />
-                  ))}
-              </div>
-            </section>
-          ))}
-        </div>
-      ) : (
-        <div
-          ref={pagerRef}
-          onScroll={onPagerScroll}
-          className="flex snap-x snap-mandatory overflow-x-auto"
-          data-testid="traditional-pager"
-        >
-          {pages.map((p, i) => (
-            <section key={i} className="w-full shrink-0 snap-start px-2 py-3">
-              <h2 className="mb-2 px-1 text-sm font-semibold">
-                {CATEGORY_LABELS[p.category]}
-                <span className="ml-2 font-normal text-stone-400">
-                  page {i + 1}/{pages.length}
-                </span>
-              </h2>
-              <div className="grid grid-cols-4 grid-rows-2 gap-1.5">
-                {p.items.map((m) => (
-                  <ItemCard key={m.id} item={m} onAdd={onAdd} compact />
+      <div className="px-4">
+        {present.map((c) => (
+          <section key={c} id={`cat-${c}`} className="scroll-mt-28 pt-4">
+            <h2 className="mb-2 font-semibold">{CATEGORY_LABELS[c]}</h2>
+            <div className="grid grid-cols-2 gap-3">
+              {menu
+                .filter((m) => m.category === c)
+                .map((m) => (
+                  <ItemCard key={m.id} item={m} onAdd={onAdd} />
                 ))}
-              </div>
-            </section>
-          ))}
-        </div>
-      )}
+            </div>
+          </section>
+        ))}
+      </div>
     </>
   );
 }
 
-function ItemCard({ item, onAdd, compact }: { item: MenuItemDto; onAdd: (i: MenuItemDto) => void; compact?: boolean }) {
+// Landscape-only book-like menu: one 4x2 page per screen, compact top bar (menu-browsing spec, D15).
+function TraditionalMenu({
+  menu,
+  tableNumber,
+  cartCount,
+  orderCount,
+  onOpen,
+  onModern,
+  onAdd,
+}: {
+  menu: MenuItemDto[];
+  tableNumber: number;
+  cartCount: number;
+  orderCount: number;
+  onOpen: (tab: Tab) => void;
+  onModern: () => void;
+  onAdd: (i: MenuItemDto) => void;
+}) {
+  const pagerRef = useRef<HTMLDivElement>(null);
+  const pages = useMemo(() => paginateByCategory(menu), [menu]);
+  const [page, setPage] = useState(0);
+  const present = CATEGORIES.filter((c) => pages.some((p) => p.category === c));
+  const active = pages[page]?.category;
+
+  const go = (index: number) => {
+    const el = pagerRef.current;
+    const target = Math.max(0, Math.min(pages.length - 1, index));
+    el?.scrollTo({ left: target * el.clientWidth, behavior: "smooth" });
+  };
+  const onScroll = () => {
+    const el = pagerRef.current;
+    if (el) setPage(Math.round(el.scrollLeft / el.clientWidth));
+  };
+  const counter = (label: string, count: number, tab: Tab) => (
+    <button onClick={() => onOpen(tab)} className="shrink-0 rounded-full border px-2.5 py-0.5 text-xs font-medium">
+      {label}
+      {count > 0 && <span className="ml-1 rounded-full bg-orange-600 px-1.5 text-white">{count}</span>}
+    </button>
+  );
+
   return (
-    <div className="flex flex-col overflow-hidden rounded-lg border bg-white">
-      <div className={`flex items-center justify-center bg-orange-50 ${compact ? "h-12 text-2xl" : "h-24 text-5xl"}`}>
+    <>
+      <header className="flex shrink-0 items-center gap-2 border-b px-2 py-1">
+        <h1 className="shrink-0 text-sm font-bold">Table {tableNumber}</h1>
+        <div className="flex min-w-0 flex-1 gap-1 overflow-x-auto" data-testid="category-tabs">
+          {present.map((c) => (
+            <button
+              key={c}
+              onClick={() => go(pages.findIndex((p) => p.category === c))}
+              className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs ${active === c ? "bg-orange-600 text-white" : "bg-stone-100"}`}
+            >
+              {CATEGORY_LABELS[c]}
+            </button>
+          ))}
+        </div>
+        {counter("Cart", cartCount, "cart")}
+        {counter("Orders", orderCount, "orders")}
+        <button onClick={onModern} className="shrink-0 rounded-full border px-2.5 py-0.5 text-xs">
+          📱 Modern
+        </button>
+      </header>
+
+      <div className="relative min-h-0 flex-1">
+        <div ref={pagerRef} onScroll={onScroll} className="flex h-full snap-x snap-mandatory overflow-x-auto" data-testid="traditional-pager">
+          {pages.map((p, i) => (
+            <section
+              key={i}
+              aria-label={`${CATEGORY_LABELS[p.category]} page`}
+              className="grid h-full w-full shrink-0 snap-start grid-cols-4 grid-rows-2 gap-1.5 px-9 py-1.5"
+            >
+              {p.items.map((m) => (
+                <TraditionalCard key={m.id} item={m} onAdd={onAdd} />
+              ))}
+            </section>
+          ))}
+        </div>
+        <button
+          aria-label="Previous page"
+          onClick={() => go(page - 1)}
+          disabled={page === 0}
+          className="absolute left-1 top-1/2 -translate-y-1/2 rounded-full bg-white/90 px-1.5 py-2 text-sm shadow disabled:opacity-30"
+        >
+          ◀
+        </button>
+        <button
+          aria-label="Next page"
+          onClick={() => go(page + 1)}
+          disabled={page === pages.length - 1}
+          className="absolute right-1 top-1/2 -translate-y-1/2 rounded-full bg-white/90 px-1.5 py-2 text-sm shadow disabled:opacity-30"
+        >
+          ▶
+        </button>
+      </div>
+      <p className="shrink-0 pb-1 text-center text-xs text-stone-500" data-testid="page-indicator">
+        {active && CATEGORY_LABELS[active]} · {page + 1}/{pages.length}
+      </p>
+    </>
+  );
+}
+
+function TraditionalCard({ item, onAdd }: { item: MenuItemDto; onAdd: (i: MenuItemDto) => void }) {
+  return (
+    <div className="flex min-h-0 flex-col overflow-hidden rounded-lg border bg-white">
+      {/* image placeholder drops on very short screens so names and Add stay visible (D15 risk) */}
+      <div className="flex min-h-0 flex-1 items-center justify-center bg-orange-50 text-3xl [@media(max-height:340px)]:hidden">
         {EMOJI[item.category]}
       </div>
-      <div className={`flex flex-1 flex-col ${compact ? "p-1" : "p-2"}`}>
-        <p className={`font-medium leading-tight ${compact ? "text-[11px]" : "text-sm"}`}>{item.nameTh}</p>
-        <p className={`leading-tight text-stone-500 ${compact ? "text-[10px]" : "text-xs"}`}>{item.nameEn}</p>
+      <div className="flex flex-col p-1.5">
+        <p className="line-clamp-2 text-xs font-medium leading-tight">{item.nameTh}</p>
+        <p className="line-clamp-2 text-[10px] leading-tight text-stone-500">{item.nameEn}</p>
+        <div className="mt-0.5 flex items-center justify-between">
+          <span className="text-xs font-semibold">{baht(item.price)}</span>
+          <button onClick={() => onAdd(item)} className="rounded bg-orange-600 px-2 text-[11px] font-medium text-white">
+            Add
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ItemCard({ item, onAdd }: { item: MenuItemDto; onAdd: (i: MenuItemDto) => void }) {
+  return (
+    <div className="flex flex-col overflow-hidden rounded-lg border bg-white">
+      <div className="flex h-24 items-center justify-center bg-orange-50 text-5xl">{EMOJI[item.category]}</div>
+      <div className="flex flex-1 flex-col p-2">
+        <p className="text-sm font-medium leading-tight">{item.nameTh}</p>
+        <p className="text-xs leading-tight text-stone-500">{item.nameEn}</p>
         <div className="mt-auto flex items-center justify-between pt-1">
-          <span className={`font-semibold ${compact ? "text-[11px]" : "text-sm"}`}>{baht(item.price)}</span>
-          <button
-            onClick={() => onAdd(item)}
-            className={`rounded bg-orange-600 font-medium text-white ${compact ? "px-1.5 text-[10px]" : "px-2 py-0.5 text-xs"}`}
-          >
+          <span className="text-sm font-semibold">{baht(item.price)}</span>
+          <button onClick={() => onAdd(item)} className="rounded bg-orange-600 px-2 py-0.5 text-xs font-medium text-white">
             Add
           </button>
         </div>
@@ -342,11 +468,11 @@ function OptionsSheet({
   const toggle = (id: number) => setOptionIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]));
 
   return (
-    <div className="fixed inset-0 z-30 flex items-end justify-center bg-black/40" onClick={onCancel}>
+    <div className="fixed inset-0 z-30 flex items-end justify-center bg-black/40 landscape:items-center landscape:p-2" onClick={onCancel}>
       <div
         role="dialog"
         aria-label={`Options for ${item.nameEn}`}
-        className="w-full max-w-md rounded-t-2xl bg-white p-4"
+        className="max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-t-2xl bg-white p-4 landscape:rounded-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <h2 className="text-lg font-bold">{item.nameTh}</h2>
@@ -396,7 +522,7 @@ function OptionsSheet({
           <span className="font-semibold">{baht(unit * qty)}</span>
         </div>
 
-        <div className="mt-4 grid grid-cols-2 gap-2">
+        <div className="sticky -bottom-4 -mx-4 mt-4 grid grid-cols-2 gap-2 bg-white px-4 py-3">
           <button onClick={onCancel} className="rounded-lg border py-2">
             Cancel
           </button>

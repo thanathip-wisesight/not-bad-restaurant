@@ -25,10 +25,10 @@ None.
 
 ### Modified Capabilities
 
-- `restaurant-console`: adds layout requirements (kitchen board, table strip and drawer, phone count bar, full-width history). Existing requirements are unchanged. This capability is introduced by `add-customer-ordering-poc`, which must be archived before this change.
+- `restaurant-console`: adds layout requirements (kitchen board, table strip and drawer, phone count bar, full-width history). Existing requirements are unchanged. Main spec: `openspec/specs/restaurant-console/spec.md` (from the archived `add-customer-ordering-poc`).
 
 ## Impact
 
-- `app/console/console-board.tsx` split into board, table strip/drawer, and phone list views; `app/console/history/page.tsx` width.
+- `app/console/console-board.tsx` renders the board, table strip/drawer, and phone list; shared data, actions, and table detail extracted to `app/console/console-parts.tsx`; `app/console/history/page.tsx` width.
 - `lib/service.ts`: order item DTO gains its last status-change time.
 - `tests/e2e/walkthrough.mjs` and unit tests extended. No schema, API route, or dependency changes.

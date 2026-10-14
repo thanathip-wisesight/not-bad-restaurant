@@ -33,22 +33,66 @@ try {
   step("menu shows table number, six tabs in order, Modern by default");
   await shot(A, "01-modern");
 
+  // Traditional is landscape-only (menu-browsing spec): upright falls back to Modern with a hint
+  const pager = A.getByTestId("traditional-pager");
+  const indicator = A.getByTestId("page-indicator");
   await A.getByRole("button", { name: "📖 Traditional" }).click();
+  await A.getByText("Turn your phone sideways").waitFor();
+  assert.equal(await pager.count(), 0, "no Traditional pager while upright");
+  assert.ok(await A.getByRole("heading", { name: "Main", exact: true }).isVisible(), "Modern shown upright");
+  await shot(A, "02a-portrait-hint");
+  step("Traditional chosen while upright -> Modern with turn-sideways hint");
+
+  await A.setViewportSize({ width: 844, height: 390 });
+  await pager.waitFor();
+  assert.equal(await A.locator("nav").count(), 0, "bottom tab bar replaced by compact top bar");
+  const noVScroll = () => A.evaluate(() => document.documentElement.scrollHeight <= innerHeight);
+  assert.ok(await noVScroll(), "landscape page does not scroll vertically");
   await A.reload();
-  await A.getByRole("button", { name: "📱 Modern" }).waitFor();
-  step("Traditional layout persists across reload");
-  await A.locator("main div.sticky button", { hasText: "Soup" }).click();
-  await A.waitForTimeout(800);
-  const pageTitles = await A.locator("[data-testid=traditional-pager] section h2").allTextContents();
-  const soupPages = pageTitles.filter((t) => t.startsWith("Soup"));
-  assert.equal(soupPages.length, 2, "10 soups -> 2 pages");
-  const soupCounts = await A.locator("[data-testid=traditional-pager] section", { hasText: /^Soup/ }).evaluateAll((els) =>
+  await pager.waitFor();
+  step("rotated to landscape -> Traditional; choice survives reload in landscape");
+
+  await A.getByTestId("category-tabs").getByRole("button", { name: "Soup" }).click();
+  await indicator.getByText(/^Soup · \d+\/\d+$/).waitFor();
+  const soupCounts = await A.getByRole("region", { name: "Soup page" }).evaluateAll((els) =>
     els.map((e) => e.querySelectorAll("button").length),
   );
-  assert.deepEqual(soupCounts, [8, 2]);
-  await shot(A, "02-traditional-soup");
-  step("Traditional: Soup spans 2 pages (8 + 2), tab jumps to it");
+  assert.deepEqual(soupCounts, [8, 2], "10 soups -> 8 + 2");
+  const [, soupFirst, total] = (await indicator.innerText()).match(/(\d+)\/(\d+)/);
+  await A.getByRole("button", { name: "Next page" }).click();
+  await indicator.getByText(`Soup · ${+soupFirst + 1}/${total}`).waitFor();
+  await A.waitForTimeout(500);
+  await shot(A, "02b-traditional-soup-p2");
+  step("Soup tab jumps to Soup; 4x2 pages split 8 + 2; next-page control and indicator");
+
+  await A.getByRole("button", { name: /^Cart/ }).click();
+  await A.getByRole("dialog", { name: "Cart" }).getByText("Your cart is empty.").waitFor();
+  await A.getByRole("dialog", { name: "Cart" }).getByRole("button", { name: "Close" }).click();
+  await indicator.getByText(`Soup · ${+soupFirst + 1}/${total}`).waitFor();
+  step("cart overlay closes back to the same page");
+
+  for (const [w, h] of [[844, 390], [667, 375]]) {
+    await A.setViewportSize({ width: w, height: h });
+    await A.waitForTimeout(300);
+    assert.ok(await noVScroll(), `no vertical scroll at ${w}x${h}`);
+    await A.getByTestId("category-tabs").getByRole("button", { name: "Main" }).click();
+    await A.getByRole("region", { name: "Main page" }).first().getByRole("button", { name: "Add" }).first().click();
+    const dialog = A.getByRole("dialog", { name: /Options for/ });
+    const confirm = dialog.getByRole("button", { name: "Confirm" });
+    await confirm.scrollIntoViewIfNeeded();
+    const box = await confirm.boundingBox();
+    assert.ok(box && box.y + box.height <= h, `Confirm reachable at ${w}x${h}`);
+    await A.waitForTimeout(300);
+    await shot(A, `02c-options-${w}x${h}`);
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+  }
+  step("options overlay fits/scrolls with Confirm reachable at 844x390 and 667x375");
+
+  await A.setViewportSize({ width: 390, height: 844 });
+  await A.getByText("Turn your phone sideways").waitFor();
   await A.getByRole("button", { name: "📱 Modern" }).click();
+  await A.getByRole("button", { name: "📖 Traditional" }).waitFor();
+  step("rotated upright -> Modern again; switched back to Modern");
 
   // Options sheet + cart
   const padThaiCard = A.locator("div.rounded-lg", { hasText: "Pad Thai with Shrimp" }).first();

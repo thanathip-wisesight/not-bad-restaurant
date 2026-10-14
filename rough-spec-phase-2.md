@@ -19,5 +19,4 @@ The change thus requires existing specs and implementation to add branch code in
 
 The restaurant side console now requires basic authentication, which will log in a "user" who can belong to multiple branches of the restaurant brand. If the user belongs to only one branch, they are immediately directed to console page of that branch, otherwise, they must choose a branch from many they belong to.
 
-Other than that, nothing really changes.
 

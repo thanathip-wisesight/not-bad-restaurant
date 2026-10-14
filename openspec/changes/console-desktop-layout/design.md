@@ -41,4 +41,3 @@ Extract the existing action buttons, status badge, and bill actions from `consol
 - [Served column grows during a long service] → Bounded by open bills only; closes with each bill. Acceptable for a demo.
 - [768 px portrait tablet gives ~180 px per column] → Cards use compact text; action buttons wrap.
 - [Both views in the DOM] → Tests must target the visible view (e.g. `:visible` selectors).
-- [Archive order] → `restaurant-console` main spec is created by archiving `add-customer-ordering-poc`; this change must be archived after it.

@@ -1,10 +1,10 @@
 # Not Bad Restaurant – Agreed Specification (Demo / POC)
 
-Plain-language summary of every spec in `openspec/changes/*/specs/` as they currently stand. The OpenSpec files are the source of truth; this file is regenerated from them when they change. Original brief: `requirements.md`.
+Plain-language summary of the main specs in `openspec/specs/` plus the deltas of active changes in `openspec/changes/*/specs/`. The OpenSpec files are the source of truth; this file is regenerated from them when they change. Original brief: `requirements.md`.
 
 | Change | Status | Capabilities |
 |---|---|---|
-| `add-customer-ordering-poc` | Implemented, except landscape Traditional (5.7, 5.8, 7.3) and deploy (7.2) | menu-browsing, ordering, order-tracking, payment, restaurant-console |
+| `add-customer-ordering-poc` | Archived 2026-10-14 into `openspec/specs/` (deploy 7.2 still open) | menu-browsing, ordering, order-tracking, payment, restaurant-console |
 | `console-desktop-layout` | Implemented | restaurant-console (layout additions) |
 
 ## 1. Scope
@@ -148,5 +148,5 @@ The console is mainly used on a tablet or cashier PC, and still works on a phone
 - Seed data: 10 tables and 60 Thai dishes.
 - Phones and the console check the server every 5 seconds. Vercel functions cannot hold open the live connections that push updates would need.
 - Details:
-  - `openspec/changes/add-customer-ordering-poc/design.md`
+  - `openspec/changes/archive/2026-10-14-add-customer-ordering-poc/design.md`
   - `openspec/changes/console-desktop-layout/design.md`

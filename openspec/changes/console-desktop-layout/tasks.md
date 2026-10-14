@@ -27,5 +27,4 @@
 
 ## Workflow follow-up
 
-- Archive `add-customer-ordering-poc` before archiving this change (it creates the `restaurant-console` main spec).
 - After this change is applied, the product owner will propose an additional requirement as a new change; do not archive until that has been reviewed.
