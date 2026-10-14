@@ -7,15 +7,19 @@ Gives restaurant staff a single simple page to see every table's orders, drive e
 ## Requirements
 
 ### Requirement: Tables overview
-The console SHALL list every table with its open TableSession, if any: Bill number, Bill status, Bill total, and each OrderItem with name, options, note, and status. Items in `cancel_requested` SHALL be visually highlighted. The view SHALL refresh within 10 seconds of changes.
+The console SHALL list every table of the selected branch with its open TableSession, if any: Bill number, Bill status, Bill total, and each OrderItem with name, options, note, and status. Tables of other branches SHALL NOT appear. Items in `cancel_requested` SHALL be visually highlighted. The view SHALL refresh within 10 seconds of changes.
 
 #### Scenario: New order appears
-- **WHEN** a customer confirms a cart at table 3
-- **THEN** the console shows the new `pending` OrderItems under table 3 within 10 seconds
+- **WHEN** a customer confirms a cart at SIAM table 3
+- **THEN** the SIAM console shows the new `pending` OrderItems under table 3 within 10 seconds
 
 #### Scenario: Idle table
-- **WHEN** table 7 has no open TableSession
-- **THEN** the console shows table 7 as free
+- **WHEN** SIAM table 7 has no open TableSession
+- **THEN** the SIAM console shows table 7 as free
+
+#### Scenario: Other branch hidden
+- **WHEN** ASOK table 2 has an open TableSession
+- **THEN** the SIAM console does not show it
 
 ### Requirement: Item status actions
 For each OrderItem the console SHALL offer only the actions valid for its status: Start (`pending`→`in_progress`), Serve (`in_progress`→`served`), Void (`pending` or `in_progress`→`cancelled`), Confirm cancel (`cancel_requested`→`cancelled`), and Reject cancel (`cancel_requested`→`pending`).
@@ -37,11 +41,11 @@ For each OrderItem the console SHALL offer only the actions valid for its status
 - **THEN** it becomes `cancelled`
 
 ### Requirement: Mark Bill paid
-The console SHALL let staff mark a Bill paid only when every OrderItem is `served` or `cancelled`. Marking paid SHALL have the same effect as a successful customer payment, including the unsent carts warning defined in the payment capability.
+The console SHALL let staff mark a Bill of the selected branch paid only when every OrderItem is `served` or `cancelled`. Marking paid SHALL have the same effect as a successful customer payment, including the unsent carts warning defined in the payment capability.
 
 #### Scenario: Paid at cashier
-- **WHEN** all items of Bill `T05-0042` are served or cancelled and staff taps Mark paid
-- **THEN** the Bill becomes `paid` and table 5's TableSession closes
+- **WHEN** all items of Bill `SIAM-T05-0042` are served or cancelled and staff on the SIAM console taps Mark paid
+- **THEN** the Bill becomes `paid` and SIAM table 5's TableSession closes
 
 #### Scenario: Unresolved items block
 - **WHEN** a Bill has an `in_progress` item and staff taps Mark paid
@@ -55,18 +59,26 @@ The console SHALL let staff clear a table's open TableSession at any time, after
 - **THEN** the Bill is recorded `voided`, table 4 shows as free, and the Bill remains in history
 
 ### Requirement: Print receipt
-The console SHALL provide "Print bill" for any open or historical Bill, opening the browser print dialog with a receipt showing restaurant name, table number, Bill number, date and time, served OrderItems with options and prices, total, and paid/unpaid/voided status. It SHALL be repeatable. The receipt is not a tax invoice.
+The console SHALL provide "Print bill" for any open or historical Bill of the selected branch, opening the browser print dialog with a receipt showing restaurant name, branch name, table number, Bill number, date and time, served OrderItems with options and prices, total, and paid/unpaid/voided status. It SHALL be repeatable. The receipt is not a tax invoice.
 
 #### Scenario: Reprint
 - **WHEN** staff taps Print bill twice on the same Bill
 - **THEN** the print dialog opens each time with identical receipt content
 
+#### Scenario: Branch on receipt
+- **WHEN** staff prints a SIAM Bill
+- **THEN** the receipt shows the SIAM branch name
+
 ### Requirement: Bill history
-The console SHALL list closed Bills, newest first, with Bill number, table, close time, total, and status (`paid` or `voided`), and SHALL allow opening a Bill to view its OrderItems and print it.
+The console SHALL list closed Bills of the selected branch, newest first, with Bill number, table, close time, total, and status (`paid` or `voided`), and SHALL allow opening a Bill to view its OrderItems and print it.
 
 #### Scenario: View past bill
-- **WHEN** staff opens Bill history after table 5 paid
+- **WHEN** staff opens SIAM Bill history after SIAM table 5 paid
 - **THEN** that Bill is listed as `paid` with its total
+
+#### Scenario: Other branch's bills hidden
+- **WHEN** ASOK table 2's Bill has been paid
+- **THEN** it does not appear in SIAM Bill history
 
 ### Requirement: Layout by screen width
 At viewport widths of 768 px and above, the console SHALL show the kitchen board with the table strip. Below 768 px, it SHALL show the per-table card list with a count bar. Both layouts SHALL offer the same staff actions with the same rules.
@@ -109,11 +121,11 @@ Each board card SHALL show the table number prominently, the dish name, selected
 - **THEN** its card shows "Table 5", the dish, "Extra egg", the note, "4 min", and the Start and Void actions
 
 ### Requirement: Table strip
-Above the board, the console SHALL show one chip per table in table-number order. A free table's chip SHALL be grey and labelled free. An occupied table's chip SHALL show its Bill number, served total, and the number of dishes not yet served or cancelled.
+Above the board, the console SHALL show one chip per table of the selected branch in table-number order. A free table's chip SHALL be grey and labelled free. An occupied table's chip SHALL show its Bill number, served total, and the number of dishes not yet served or cancelled.
 
 #### Scenario: Strip content
-- **WHEN** table 3 is free and table 5 has Bill T05-0042 with ฿90 served and 2 unresolved dishes
-- **THEN** table 3's chip is grey and labelled free, and table 5's chip shows T05-0042, ฿90, and 2
+- **WHEN** SIAM table 3 is free and SIAM table 5 has Bill SIAM-T05-0042 with ฿90 served and 2 unresolved dishes
+- **THEN** table 3's chip is grey and labelled free, and table 5's chip shows SIAM-T05-0042, ฿90, and 2
 
 ### Requirement: Table drawer
 Selecting an occupied table chip SHALL open a side drawer listing all of that table's dishes, including cancelled ones, with their statuses and valid item actions, plus Mark paid, Print bill, and Clear table. The drawer SHALL stay open across refreshes and SHALL close when the table's bill closes or staff dismisses it.

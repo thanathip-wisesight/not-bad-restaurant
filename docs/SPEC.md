@@ -6,7 +6,7 @@ Plain-language summary of the main specs in `openspec/specs/` plus the deltas of
 |---|---|---|
 | `add-customer-ordering-poc` | Archived 2026-10-14 into `openspec/specs/` (deploy 7.2 still open) | menu-browsing, ordering, order-tracking, payment, restaurant-console |
 | `console-desktop-layout` | Archived 2026-10-14 into `openspec/specs/` | restaurant-console (layout additions) |
-| `add-branches-and-console-login` | Implemented, not yet archived | restaurant-branches, console-access (new); menu-browsing, payment, restaurant-console (modified) |
+| `add-branches-and-console-login` | Archived 2026-10-14 into `openspec/specs/` | restaurant-branches, console-access (new); menu-browsing, payment, restaurant-console (modified) |
 
 ## 1. Scope
 
@@ -172,4 +172,4 @@ The console is mainly used on a tablet or cashier PC, and still works on a phone
 - Details:
   - `openspec/changes/archive/2026-10-14-add-customer-ordering-poc/design.md`
   - `openspec/changes/archive/2026-10-14-console-desktop-layout/design.md`
-  - `openspec/changes/add-branches-and-console-login/design.md`
+  - `openspec/changes/archive/2026-10-14-add-branches-and-console-login/design.md`

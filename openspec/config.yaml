@@ -37,8 +37,12 @@ context: |
   under `openspec/changes/<change>/th/` mirroring the English paths
   (`th/proposal.md`, `th/design.md`, `th/tasks.md`, `th/specs/<capability>/spec.md`).
   Never put Thai files under the change's `specs/` folder (OpenSpec would treat them
-  as spec deltas) or under `openspec/specs/`. The human-readable aggregate of the main
-  specs is `docs/SPEC.md` with its Thai translation `docs/SPEC.th.md`.
+  as spec deltas). Main specs get their Thai translation as a sibling file
+  `openspec/specs/<capability>/spec.th.md` (OpenSpec ignores it); never use a `th/`
+  folder under `openspec/specs/` (OpenSpec would list it as a capability). When an
+  archive syncs a delta into `spec.md`, update the sibling `spec.th.md` in the same step.
+  The human-readable aggregate of the main specs is `docs/SPEC.md` with its Thai
+  translation `docs/SPEC.th.md`.
   Thai files start with a note naming the English source, keep requirement, scenario,
   and task numbering identical to the English, keep code, paths, identifiers, status
   names, and SHALL/MUST/WHEN/THEN keywords in English, and use plain numbered bullets

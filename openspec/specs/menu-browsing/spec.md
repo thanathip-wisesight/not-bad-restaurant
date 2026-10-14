@@ -7,19 +7,19 @@ Lets a customer at a table open the restaurant menu on a phone from the table's 
 ## Requirements
 
 ### Requirement: Table menu entry by QR URL
-The system SHALL serve the menu at a per-table URL containing the table number, and SHALL display that table number on the menu page. Opening the URL SHALL NOT create a TableSession.
+The system SHALL serve the menu at a per-table URL containing the branch code and the table number (`/b/<branchCode>/t/<tableNo>`), and SHALL display the branch name and table number on the menu page. Opening the URL SHALL NOT create a TableSession.
 
 #### Scenario: Customer scans table QR
-- **WHEN** a customer opens `/t/5`
-- **THEN** the menu page is shown with "Table 5" visible
+- **WHEN** a customer opens `/b/SIAM/t/5`
+- **THEN** the menu page is shown with the SIAM branch name and "Table 5" visible
 
 #### Scenario: Unknown table number
-- **WHEN** a customer opens a URL for a table number that does not exist
+- **WHEN** a customer opens a URL for a branch code or table number that does not exist, including the old `/t/5` form
 - **THEN** the system shows a "table not found" message and no menu
 
 #### Scenario: Scan does not open a session
-- **WHEN** a customer opens `/t/5` and adds nothing to a cart
-- **THEN** no TableSession exists for table 5
+- **WHEN** a customer opens `/b/SIAM/t/5` and adds nothing to a cart
+- **THEN** no TableSession exists for SIAM table 5
 
 ### Requirement: Six menu categories
 The system SHALL group menu items into exactly these categories, in this order: Main, A la carte, Soup, Special, Dessert, Drink. Both layouts SHALL provide a tab per category.
