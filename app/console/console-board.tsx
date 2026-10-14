@@ -8,13 +8,17 @@ import { baht } from "@/lib/client";
 import type { ConsoleTableDto } from "@/lib/service";
 import { LogoutButton } from "./logout-button";
 import {
+  BatchBar,
   ItemActions,
   OptionsAndNote,
+  SelectBox,
   TableDetail,
   isOpen,
   useConsoleData,
+  useSelection,
   type ConsoleHandlers,
   type OpenTable,
+  type SelectionApi,
 } from "./console-parts";
 
 // Kitchen board at md (>= 768 px), per-table cards below it; switched in CSS (design D2).
@@ -29,7 +33,8 @@ export function ConsoleBoard({
   staffName: string;
   canSwitch: boolean;
 }) {
-  const { tables, now, error, handlers } = useConsoleData(branchCode);
+  const { tables, now, error, handlers, dialog } = useConsoleData(branchCode);
+  const sel = useSelection(tables);
   const [drawerSession, setDrawerSession] = useState<number | null>(null);
   const open = tables?.filter(isOpen) ?? [];
   const cols = boardColumns(open);
@@ -37,7 +42,7 @@ export function ConsoleBoard({
   const drawerTable = open.find((t) => t.session.id === drawerSession);
 
   return (
-    <main className="mx-auto max-w-6xl p-4 md:flex md:h-dvh md:max-w-none md:flex-col">
+    <main className="mx-auto max-w-6xl p-4 pb-20 md:flex md:h-dvh md:max-w-none md:flex-col">
       <header className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-xl font-bold">
           Restaurant console <span className="font-normal text-stone-500">· {branchName}</span>
@@ -65,13 +70,15 @@ export function ConsoleBoard({
         <>
           <div className="md:hidden" data-testid="phone-console">
             <CountBar cols={cols} />
-            <PhoneList tables={tables} handlers={handlers} />
+            <PhoneList tables={tables} handlers={handlers} sel={sel} />
           </div>
           <div className="hidden min-h-0 flex-1 flex-col md:flex" data-testid="board-console">
             <TableStrip tables={tables} selected={drawerSession} onSelect={setDrawerSession} />
-            <Board cols={cols} now={now} handlers={handlers} />
+            <Board cols={cols} now={now} handlers={handlers} sel={sel} />
           </div>
-          {drawerTable && <TableDrawer table={drawerTable} handlers={handlers} onClose={() => setDrawerSession(null)} />}
+          {drawerTable && <TableDrawer table={drawerTable} handlers={handlers} sel={sel} onClose={() => setDrawerSession(null)} />}
+          <BatchBar sel={sel} handlers={handlers} />
+          {dialog}
         </>
       )}
     </main>
@@ -81,7 +88,17 @@ export function ConsoleBoard({
 const headerStyle = (s: BoardStatus, count: number) =>
   s === "cancel_requested" && count > 0 ? "bg-amber-300 text-amber-950" : "bg-stone-200 text-stone-800";
 
-function Board({ cols, now, handlers }: { cols: Record<BoardStatus, BoardCard[]>; now: number; handlers: ConsoleHandlers }) {
+function Board({
+  cols,
+  now,
+  handlers,
+  sel,
+}: {
+  cols: Record<BoardStatus, BoardCard[]>;
+  now: number;
+  handlers: ConsoleHandlers;
+  sel: SelectionApi;
+}) {
   return (
     <div className="mt-3 grid min-h-0 flex-1 grid-cols-4 gap-3" data-testid="kitchen-board">
       {BOARD_COLUMNS.map((s) => (
@@ -95,8 +112,11 @@ function Board({ cols, now, handlers }: { cols: Record<BoardStatus, BoardCard[]>
           <ul className="flex-1 space-y-2 overflow-y-auto p-2">
             {cols[s].map((c) => (
               <li key={c.id} className="rounded-md border bg-white p-2 shadow-sm">
-                <div className="flex items-baseline justify-between gap-2">
-                  <span className="text-lg font-bold">Table {c.tableNumber}</span>
+                <div className="flex items-center justify-between gap-2">
+                  <label className="flex items-center gap-2">
+                    <SelectBox sel={sel} tableNumber={c.tableNumber} item={c} />
+                    <span className="text-lg font-bold">Table {c.tableNumber}</span>
+                  </label>
                   <span className="text-xs text-stone-500" data-testid="elapsed">
                     {formatElapsed(c.updatedAt, now)}
                   </span>
@@ -104,7 +124,7 @@ function Board({ cols, now, handlers }: { cols: Record<BoardStatus, BoardCard[]>
                 <p className="text-sm font-medium leading-tight">{c.name}</p>
                 <OptionsAndNote item={c} />
                 <div className="mt-1 flex flex-wrap gap-1">
-                  <ItemActions item={c} act={handlers.act} />
+                  <ItemActions item={c} handlers={handlers} />
                 </div>
               </li>
             ))}
@@ -149,7 +169,17 @@ function TableStrip({
   );
 }
 
-function TableDrawer({ table, handlers, onClose }: { table: OpenTable; handlers: ConsoleHandlers; onClose: () => void }) {
+function TableDrawer({
+  table,
+  handlers,
+  sel,
+  onClose,
+}: {
+  table: OpenTable;
+  handlers: ConsoleHandlers;
+  sel: SelectionApi;
+  onClose: () => void;
+}) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
@@ -171,7 +201,7 @@ function TableDrawer({ table, handlers, onClose }: { table: OpenTable; handlers:
             ✕
           </button>
         </div>
-        <TableDetail table={table} handlers={handlers} />
+        <TableDetail table={table} handlers={handlers} sel={sel} />
       </aside>
     </div>
   );
@@ -190,7 +220,7 @@ function CountBar({ cols }: { cols: Record<BoardStatus, BoardCard[]> }) {
   );
 }
 
-function PhoneList({ tables, handlers }: { tables: ConsoleTableDto[]; handlers: ConsoleHandlers }) {
+function PhoneList({ tables, handlers, sel }: { tables: ConsoleTableDto[]; handlers: ConsoleHandlers; sel: SelectionApi }) {
   return (
     <div className="mt-4 grid items-start gap-4 sm:grid-cols-2">
       {tables.map((t) => (
@@ -199,7 +229,7 @@ function PhoneList({ tables, handlers }: { tables: ConsoleTableDto[]; handlers: 
             <h2 className="text-lg font-bold">Table {t.tableNumber}</h2>
             {t.session ? <span className="font-mono text-sm">{t.session.billNo}</span> : <span className="text-sm text-emerald-700">Free</span>}
           </div>
-          {isOpen(t) && <TableDetail table={t} handlers={handlers} />}
+          {isOpen(t) && <TableDetail table={t} handlers={handlers} sel={sel} />}
         </section>
       ))}
     </div>

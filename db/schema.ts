@@ -1,6 +1,8 @@
 import { sql } from "drizzle-orm";
 import {
+  bigserial,
   check,
+  index,
   integer,
   jsonb,
   pgEnum,
@@ -19,6 +21,7 @@ import { CATEGORIES, ITEM_STATUSES } from "../lib/domain";
 export const categoryEnum = pgEnum("category", CATEGORIES);
 export const sessionStatusEnum = pgEnum("session_status", ["open", "paid", "voided"]);
 export const itemStatusEnum = pgEnum("item_status", ITEM_STATUSES);
+export const eventActorEnum = pgEnum("event_actor", ["customer", "staff", "system"]);
 
 export const billSeq = pgSequence("bill_seq");
 
@@ -138,3 +141,24 @@ export const staffSessions = pgTable("staff_sessions", {
     .references(() => users.id, { onDelete: "cascade" }),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
 });
+
+// ---------- order history (order-history spec, design D2) ----------
+
+// Append-only: application code only inserts. from_status is null for the first (pending) event.
+export const orderItemEvents = pgTable(
+  "order_item_events",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    orderItemId: integer("order_item_id")
+      .notNull()
+      .references(() => orderItems.id),
+    fromStatus: itemStatusEnum("from_status"),
+    toStatus: itemStatusEnum("to_status").notNull(),
+    at: timestamp("at", { withTimezone: true }).notNull(),
+    actor: eventActorEnum("actor").notNull(),
+    staffUserId: integer("staff_user_id").references(() => users.id),
+    deviceId: uuid("device_id"),
+    note: text("note"),
+  },
+  (t) => [index("order_item_events_item_at").on(t.orderItemId, t.at)],
+);

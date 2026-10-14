@@ -61,6 +61,38 @@ npm run e2e -- http://localhost:3100   # screenshots land in tests/e2e/shots/
 2. Locally, with `DATABASE_URL` pointed at Neon: `npm run db:migrate`, then `npm run db:seed` on an empty database or `npm run db:seed -- --users-only` on one with history.
 3. Deploy with `vercel` or a git push. Session cookies are `Secure` in production, so the console needs HTTPS (Vercel provides it).
 
+## Order history API (staff login required)
+
+Every dish status change is logged (who, when, from → to, reason/remark). Two JSON endpoints read it for the selected branch. Range: `from` inclusive, `to` exclusive, ISO dates; default last 30 days; max 366 days; filtered by when the dish was ordered.
+
+```bash
+curl -c cookies.txt -H 'content-type: application/json' \
+  -d '{"username":"siam.staff","password":"siam-demo"}' http://localhost:3000/api/auth/login
+
+# per menu item: how often ordered and how those dishes ended
+curl -b cookies.txt 'http://localhost:3000/api/console/SIAM/telemetry/dishes?from=2026-10-01&to=2026-11-01'
+# {"branch":"SIAM","from":"…","to":"…","dishes":[{"menuItemId":1,"name":"ผัดไทยกุ้งสด / Pad Thai with Shrimp","ordered":2,"finished":1,"cancelled":1,"voided":0}, …]}
+
+# individual dishes (newest first, max 500) with their full status log
+curl -b cookies.txt 'http://localhost:3000/api/console/SIAM/telemetry/items?menuItemId=1'
+# {"branch":"SIAM","limit":500,"items":[{"id":2,"status":"finished","billNo":"SIAM-T05-0049","tableNumber":5,"orderedAt":"…",
+#   "events":[{"from":null,"to":"pending","by":"customer",…},{"from":"pending","to":"in_progress","by":"siam.staff",…},
+#             {"from":"in_progress","to":"served",…},{"from":"served","to":"finished","by":"system",…}]}]}
+```
+
+401 without a session, 403 for another branch, 400 for a bad range or `menuItemId`.
+
+## Free-tier hosting budget
+
+Free tiers are hard monthly caps, so the app polls every 10 s (not 5 s) and a customer phone stops polling while its table has no open bill and its cart is empty.
+
+| Free tier | Included per month | What uses it here |
+|---|---|---|
+| [Vercel Hobby](https://vercel.com/docs/plans/hobby) | 1,000,000 function invocations, 4 active-CPU hours; over the limit the feature pauses for 30 days | ≈ 720 requests/hour per active phone, ≈ 360/hour per open console tab |
+| [Neon Free](https://neon.com/docs/introduction/plans) | 100 CU-hours (≈ 400 h at 0.25 CU); scales to zero after 5 min idle; compute suspended when exhausted | the database stays awake while any screen polls; a console open 12 h/day ≈ 360 h/month |
+
+Vercel Hobby is for **personal, non-commercial use only** ([fair use](https://vercel.com/docs/limits/fair-use-guidelines#commercial-usage)); a real restaurant needs Pro.
+
 ## Layout
 
 - `lib/domain.ts` – status transitions, bill total, menu pagination (pure)

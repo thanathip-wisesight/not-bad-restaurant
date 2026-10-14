@@ -7,7 +7,7 @@ Lets a table settle its Bill through a stubbed QR bank-app flow or at the cashie
 ## Requirements
 
 ### Requirement: Payment eligibility gate
-The customer "Pay" action SHALL be enabled only when the requesting device's cart is empty and every OrderItem of the TableSession is `served` or `cancelled`. Otherwise the system SHALL tell the customer what blocks payment: unconfirmed cart lines to confirm or remove, or unresolved items to settle with staff.
+The customer "Pay" action SHALL be enabled only when the requesting device's cart is empty and every OrderItem of the TableSession is `served`, `cancelled`, or `voided`. Otherwise the system SHALL tell the customer what blocks payment: unconfirmed cart lines to confirm or remove, or unresolved items to settle with staff.
 
 #### Scenario: Cart not empty
 - **WHEN** a customer taps Pay while their cart has a line
@@ -18,7 +18,7 @@ The customer "Pay" action SHALL be enabled only when the requesting device's car
 - **THEN** payment does not start and the customer is told to resolve those items with staff
 
 #### Scenario: Eligible
-- **WHEN** the device's cart is empty and all OrderItems are `served` or `cancelled`
+- **WHEN** the device's cart is empty and all OrderItems are `served`, `cancelled`, or `voided`
 - **THEN** payment options are shown
 
 ### Requirement: Unsent carts warning
@@ -33,11 +33,19 @@ When payment is otherwise eligible but other devices in the TableSession still h
 - **THEN** no payment occurs and all carts are unchanged
 
 ### Requirement: Bill total
-The Bill total SHALL equal the sum of unit prices, including option deltas, of all `served` OrderItems, in whole Thai Baht. `cancelled` OrderItems SHALL contribute zero.
+The Bill total SHALL equal the sum of unit prices, including option deltas, of all `served` and `finished` OrderItems, in whole Thai Baht. `cancelled` and `voided` OrderItems SHALL contribute zero.
 
 #### Scenario: Cancelled item excluded
 - **WHEN** a Bill has served items of ฿90 and ฿50 and one cancelled ฿80 item
 - **THEN** the Bill total is ฿140
+
+#### Scenario: Voided item excluded
+- **WHEN** a Bill has a served ฿90 item and a voided ฿120 item
+- **THEN** the Bill total is ฿90
+
+#### Scenario: Total unchanged after closing
+- **WHEN** a Bill totalling ฿140 is paid and its served dishes become `finished`
+- **THEN** the Bill total in history is still ฿140
 
 ### Requirement: Bill number
 Each TableSession SHALL have a Bill number unique across all sessions, shown in the customer's Orders tab and in the console, combining the branch code, the table number, and a sequence (e.g. `SIAM-T05-0042`). Bill numbers issued before branches existed keep their original form.
@@ -65,11 +73,11 @@ A customer SHALL be able to pay at the cashier by presenting the Bill number; st
 - **THEN** the Bill becomes `paid`
 
 ### Requirement: Session closes on payment
-When a Bill becomes `paid`, the system SHALL close its TableSession, discard all remaining cart lines of that session, and keep the Bill and its OrderItems in history. Devices at that table SHALL then see an empty Orders tab, and the next cart add SHALL open a new TableSession.
+When a Bill becomes `paid`, the system SHALL close its TableSession, set the final dish statuses defined in order-tracking, discard all remaining cart lines of that session, and keep the Bill and its OrderItems in history. Devices at that table SHALL then see an empty Orders tab, and the next cart add SHALL open a new TableSession.
 
 #### Scenario: Orders cleared after payment
 - **WHEN** table 5's Bill is paid
-- **THEN** every device at table 5 shows no orders within 10 seconds, and the Bill remains retrievable in history
+- **THEN** every device at table 5 shows no orders within 15 seconds, and the Bill remains retrievable in history
 
 #### Scenario: Next customers
 - **WHEN** a customer adds an item at table 5 after its Bill was paid

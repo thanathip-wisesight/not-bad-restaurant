@@ -9,7 +9,7 @@ import { branches, menuItems, menuOptions, tables, userBranches, users } from ".
 export async function seedDatabase(db: Db) {
   await db.transaction(async (tx) => {
     await tx.execute(
-      sql`TRUNCATE staff_sessions, user_branches, users, order_items, tickets, cart_lines, table_sessions, menu_options, menu_items, tables, branches RESTART IDENTITY CASCADE`,
+      sql`TRUNCATE order_item_events, staff_sessions, user_branches, users, order_items, tickets, cart_lines, table_sessions, menu_options, menu_items, tables, branches RESTART IDENTITY CASCADE`,
     );
     await upsertBranchesAndStaff(tx);
     for (const category of CATEGORIES) {

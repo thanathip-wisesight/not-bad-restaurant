@@ -19,7 +19,7 @@ import {
   markPaid,
   payByTable,
   removeCartLine,
-  transitionItem,
+  transitionItems,
   updateCartLine,
 } from "../lib/service";
 
@@ -41,10 +41,15 @@ afterAll(() => pool.end());
 
 const add = (device: string, qty = 1, menuItemId = padThai.id, table = 5, branch = "SIAM") =>
   addCartLine(branch, table, device, { menuItemId, optionIds: [], note: "", qty });
-const staff = (id: number, action: Parameters<typeof transitionItem>[1], branchId = SIAM) =>
-  transitionItem(id, action, "staff", { branchId });
-const customer = (id: number, action: Parameters<typeof transitionItem>[1], tableNo = 5) =>
-  transitionItem(id, action, "customer", { table: { branchCode: "SIAM", tableNo } });
+let STAFF_ID: number;
+beforeEach(async () => {
+  [{ id: STAFF_ID }] = await db.select().from(users).where(eq(users.username, "siam.staff"));
+});
+type Act = Parameters<typeof transitionItems>[1];
+const staff = (id: number, action: Act, note?: string) =>
+  transitionItems([id], action, { kind: "staff", userId: STAFF_ID }, { branchId: SIAM }, note);
+const customer = (id: number, action: Act, tableNo = 5) =>
+  transitionItems([id], action, { kind: "customer", deviceId: A }, { table: { branchCode: "SIAM", tableNo } });
 
 async function confirmed(device = A, qty = 1) {
   await add(device, qty);
@@ -189,7 +194,7 @@ describe("4.5 transitions", () => {
   it("customer cannot act on another table's item or use staff actions", async () => {
     const [item] = await confirmed();
     await expect(customer(item.id, "request_cancel", 6)).rejects.toMatchObject({ status: 404 });
-    await expect(transitionItem(item.id, "start", "customer", { table: { branchCode: "SIAM", tableNo: 5 } })).rejects.toMatchObject({ status: 403 });
+    await expect(transitionItems([item.id], "start", { kind: "customer", deviceId: A }, { table: { branchCode: "SIAM", tableNo: 5 } })).rejects.toMatchObject({ status: 403 });
   });
 
   it("console handler rejects unknown actions", async () => {
@@ -230,7 +235,7 @@ describe("4.6 pay / mark paid / clear", () => {
 
   it("payment closes the session, keeps history, next add opens a new bill", async () => {
     const items = await confirmed(A, 2);
-    await staff(items[0].id, "void");
+    await staff(items[0].id, "void", "dropped on floor");
     await serveAll([items[1].id]);
     const { session } = await getTableOrders("SIAM", 5, A);
     await markPaid(SIAM, session!.id, false);

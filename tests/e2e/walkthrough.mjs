@@ -21,15 +21,19 @@ async function logIn(page, username, password) {
 }
 const shot = (p, name) => p.screenshot({ path: `${SHOTS}${name}.png`, fullPage: false });
 const nav = (p, label) => p.locator("nav").getByRole("button", { name: new RegExp(`^${label}`) }).click();
-const within10s = { timeout: 10_000 };
+const withinRefresh = { timeout: 16_000 }; // spec: changes visible within 15 s (10 s polling)
 
 try {
   // Unknown table
-  for (const path of ["/t/5", "/b/SIAM/t/99", "/b/NOPE/t/1", "/b/ASOK/t/8"]) {
+  for (const path of ["/b/SIAM/t/99", "/b/NOPE/t/1", "/b/ASOK/t/8"]) {
     await A.goto(`${BASE}${path}`);
     await A.getByText("Table not found").waitFor();
   }
-  step("old /t/5, unknown table, unknown branch, ASOK table 8 all show 'Table not found'");
+  const retired = await A.goto(`${BASE}/t/5`);
+  assert.equal(retired.status(), 404);
+  await A.getByText("This page could not be found.").waitFor();
+  assert.equal(await A.getByRole("heading", { name: /Table/ }).count(), 0, "no menu on retired link");
+  step("unknown table/branch show 'Table not found'; retired /t/5 gets the standard 404 page");
 
   // Menu + layouts
   await A.goto(`${BASE}/b/SIAM/t/5`);
@@ -153,7 +157,7 @@ try {
   assert.equal(await A.locator("main li").filter({ hasText: "Pending" }).count(), 2);
   step("confirm: qty 2 -> two pending items, Orders tab shown");
   await nav(B, "Orders");
-  await B.locator("main li").filter({ hasText: "Pending" }).nth(1).waitFor(within10s);
+  await B.locator("main li").filter({ hasText: "Pending" }).nth(1).waitFor(withinRefresh);
   await nav(B, "Cart");
   await B.getByText("Coke").waitFor();
   step("phone B sees A's items; B's cart kept");
@@ -176,7 +180,7 @@ try {
   const strip = C.getByTestId("table-strip");
   const col = (name) => board.getByRole("region", { name, exact: true });
   const req = col("Cancel requested").locator("li", { hasText: "Table 5" });
-  await req.waitFor(within10s);
+  await req.waitFor(withinRefresh);
   assert.equal(await req.getByRole("button", { name: "Start" }).count(), 0, "start not offered on cancel_requested");
   assert.match(await col("Cancel requested").locator("h2").getAttribute("class"), /bg-amber-300/);
   assert.equal(await col("Cancel requested").getByTestId("column-count").innerText(), "1");
@@ -208,17 +212,21 @@ try {
   step("board at 768/1280/1920 px; phone shows card list with count bar");
 
   await req.getByRole("button", { name: "Reject cancel" }).click();
+  await C.getByRole("dialog", { name: /^Reject cancel/ }).getByRole("button", { name: "Apply" }).click(); // remark optional
   await col("Pending").locator("li", { hasText: "Table 5" }).nth(1).waitFor();
   await col("Pending").locator("li").first().getByRole("button", { name: "Start" }).click();
   await col("In progress").locator("li", { hasText: "Table 5" }).getByRole("button", { name: "Serve" }).click();
   await col("Served").locator("li", { hasText: "Table 5" }).waitFor();
   step("board: reject -> pending, start moves to In progress, serve moves to Served");
 
-  await A.locator("main li").filter({ hasText: "Served" }).first().waitFor(within10s);
+  await A.locator("main li").filter({ hasText: "Served" }).first().waitFor(withinRefresh);
   step("customer sees Served within 10 s");
   await A.locator("main li").filter({ hasText: "Pending" }).getByRole("button", { name: "Cancel" }).click();
-  await col("Cancel requested").locator("li", { hasText: "Table 5" }).getByRole("button", { name: "Confirm cancel" }).click(within10s);
-  await A.locator("main li").filter({ hasText: "Cancelled" }).waitFor(within10s);
+  await col("Cancel requested").locator("li", { hasText: "Table 5" }).getByRole("button", { name: "Confirm cancel" }).click(withinRefresh);
+  const remark = C.getByRole("dialog", { name: /^Confirm cancel/ });
+  await remark.getByRole("textbox").fill("customer changed mind");
+  await remark.getByRole("button", { name: "Apply" }).click();
+  await A.locator("main li").filter({ hasText: "Cancelled" }).waitFor(withinRefresh);
   assert.equal(await board.locator("li", { hasText: "Table 5" }).count(), 1, "cancelled dish leaves the board");
   step("cancel request -> staff confirm -> Cancelled, gone from board");
 
@@ -237,41 +245,92 @@ try {
 
   const freeChip = (n) => strip.locator(":scope > span", { hasText: new RegExp(`Table ${n}\\s*Free`) });
   await nav(B, "Orders");
-  await B.getByText("No orders yet.").waitFor(within10s);
+  await B.getByText("No orders yet.").waitFor(withinRefresh);
   await nav(B, "Cart");
-  await B.getByText("Your cart is empty.").waitFor(within10s);
-  await freeChip(5).waitFor(within10s);
+  await B.getByText("Your cart is empty.").waitFor(withinRefresh);
+  await freeChip(5).waitFor(withinRefresh);
   step("session closed: B sees no orders, B's unsent cart discarded, strip shows table 5 free");
 
-  // Mark paid + clear through the table drawer
+  // Free-tier polling (order-tracking spec): no Bill + empty cart -> no periodic requests until interaction
+  let bRequests = 0;
+  const countB = (r) => r.url().includes("/api/b/") && bRequests++;
+  B.on("request", countB);
+  await B.waitForTimeout(25_000);
+  assert.equal(bRequests, 0, "idle phone without a Bill makes no requests for 25 s");
+  await B.mouse.click(5, 400);
+  await B.waitForTimeout(2_000);
+  assert.ok(bRequests >= 1, "interaction resumes refreshing");
+  B.off("request", countB);
+  step("idle phone after payment: 0 requests in 25 s, refresh resumes on interaction");
+
+  // Phase 3: batch actions (same table + status), void reasons, customer view of voids
   const P4 = await ctxA.newPage();
   await P4.goto(`${BASE}/b/SIAM/t/4`);
   await P4.locator("div.rounded-lg", { hasText: "Coke" }).getByRole("button", { name: "Add" }).click();
+  await P4.getByLabel("Increase quantity").click();
   await P4.getByRole("button", { name: "Confirm" }).click();
   await nav(P4, "Cart");
   await P4.getByRole("button", { name: "Confirm order" }).click();
-  await strip.getByRole("button", { name: /Table 4/ }).click(within10s);
-  const drawer4 = C.getByRole("dialog", { name: "Table 4 bill" });
-  await drawer4.getByRole("button", { name: "Mark paid" }).click();
-  await C.getByRole("alert").getByText(/Cannot mark paid/).waitFor();
-  await C.waitForTimeout(6000);
-  assert.ok(await drawer4.isVisible(), "drawer stays open across a refresh");
-  await shot(C, "06-drawer");
-  await drawer4.getByRole("button", { name: "Start" }).click();
-  await drawer4.getByRole("button", { name: "Serve" }).click();
-  await drawer4.getByRole("button", { name: "Mark paid" }).click();
-  await drawer4.waitFor({ state: "detached" });
-  await freeChip(4).waitFor();
-  step("drawer: mark paid blocked while unresolved, survives refresh, then paid -> closes, chip free");
-
   const P3 = await ctxB.newPage();
   await P3.goto(`${BASE}/b/SIAM/t/3`);
   await P3.locator("div.rounded-lg", { hasText: "Drinking Water" }).getByRole("button", { name: "Add" }).click();
   await P3.getByRole("button", { name: "Confirm" }).click();
-  await strip.getByRole("button", { name: /Table 3/ }).click(within10s);
-  await C.getByRole("dialog", { name: "Table 3 bill" }).getByRole("button", { name: "Clear table" }).click();
+  await nav(P3, "Cart");
+  await P3.getByRole("button", { name: "Confirm order" }).click();
+
+  const pend = col("Pending");
+  await pend.locator("li", { hasText: "Table 4" }).nth(1).waitFor(withinRefresh);
+  await pend.locator("li", { hasText: "Table 3" }).waitFor(withinRefresh);
+  await pend.locator("li", { hasText: "Table 4" }).first().getByRole("checkbox").check();
+  assert.equal(await pend.locator("li", { hasText: "Table 3" }).getByRole("checkbox").isDisabled(), true, "other table not selectable");
+  const batchBar = C.getByRole("toolbar", { name: "Selected dishes" });
+  await batchBar.getByRole("button", { name: "Select all 2" }).click();
+  await batchBar.getByText("2 selected · Table 4 · Pending").waitFor();
+  await shot(C, "11-batch-selection");
+  await batchBar.getByRole("button", { name: "Start" }).click();
+  await col("In progress").locator("li", { hasText: "Table 4" }).nth(1).waitFor();
+  assert.equal(await pend.locator("li", { hasText: "Table 4" }).count(), 0);
+  step("batch: other table's checkbox disabled; select all 2 -> Start moves both to In progress");
+
+  await strip.getByRole("button", { name: /Table 4/ }).click();
+  const drawer4 = C.getByRole("dialog", { name: "Table 4 bill" });
+  await drawer4.getByRole("button", { name: "Mark paid" }).click();
+  await C.getByRole("alert").getByText(/Cannot mark paid/).waitFor();
+  await C.waitForTimeout(11_000);
+  assert.ok(await drawer4.isVisible(), "drawer stays open across a refresh");
+  await drawer4.getByRole("button", { name: "Select all In progress (2)" }).click();
+  await batchBar.getByRole("button", { name: "Void" }).click();
+  const voidDialog = C.getByRole("dialog", { name: "Void 2 dishes" });
+  await voidDialog.getByRole("textbox").fill("ok");
+  assert.equal(await voidDialog.getByRole("button", { name: "Apply" }).isDisabled(), true, "void needs a 3+ character reason");
+  await voidDialog.getByRole("textbox").fill("stove failure");
+  await voidDialog.getByRole("button", { name: "Apply" }).click();
+  await drawer4.getByText("Reason: stove failure").nth(1).waitFor();
+  await shot(C, "06-drawer");
+  assert.equal(await col("In progress").locator("li", { hasText: "Table 4" }).count(), 0, "voided dishes leave the board");
+  step("batch void: reason required (3+ chars), one reason for both, shown in drawer, gone from board");
+
+  await nav(P4, "Orders");
+  await P4.locator("main li").filter({ hasText: "Cancelled" }).nth(1).waitFor(withinRefresh);
+  assert.ok(!(await P4.locator("main").innerText()).includes("stove failure"), "customer never sees the reason");
+  assert.equal(await P4.locator("main li").filter({ hasText: "Voided" }).count(), 0);
+  step("customer sees voided dishes as 'Cancelled' without the reason");
+
+  await drawer4.getByRole("button", { name: "Mark paid" }).click();
+  await drawer4.waitFor({ state: "detached" });
+  await freeChip(4).waitFor();
+  step("drawer: mark paid accepted once dishes are voided -> closes, chip free");
+
+  await strip.getByRole("button", { name: /Table 3/ }).click(withinRefresh);
+  const drawer3 = C.getByRole("dialog", { name: "Table 3 bill" });
+  await drawer3.getByRole("button", { name: "Void" }).click();
+  const single = C.getByRole("dialog", { name: /^Void: / });
+  await single.getByRole("textbox").fill("dropped on floor");
+  await single.getByRole("button", { name: "Apply" }).click();
+  await drawer3.getByText("Reason: dropped on floor").waitFor();
+  await drawer3.getByRole("button", { name: "Clear table" }).click();
   await freeChip(3).waitFor();
-  step("drawer: clear table (with confirm prompt)");
+  step("single void with reason; drawer: clear table (with confirm prompt)");
 
   // History + receipt
   await C.goto(`${BASE}/console/SIAM/history`);
@@ -330,7 +389,7 @@ try {
   await P5.getByRole("button", { name: "Confirm order" }).click();
   await nav(P5, "Orders");
   assert.match(await P5.locator("main").innerText(), /ASOK-T05-\d{4}/);
-  await E.getByTestId("kitchen-board").locator("li", { hasText: "Table 5" }).waitFor(within10s);
+  await E.getByTestId("kitchen-board").locator("li", { hasText: "Table 5" }).waitFor(withinRefresh);
   await C.goto(`${BASE}/console/SIAM`);
   await C.getByTestId("table-strip").waitFor();
   await C.waitForTimeout(6000);

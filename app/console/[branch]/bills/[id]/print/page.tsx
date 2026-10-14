@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
+import { CHARGED } from "@/lib/domain";
 import { baht, formatTime } from "@/lib/format";
 import { getBill } from "@/lib/service";
 import { NoBranchAccess, staffForPage } from "../../../../guard";
@@ -24,7 +25,8 @@ async function Receipt({ params }: Pick<PageProps<"/console/[branch]/bills/[id]/
   // A Bill of another branch is "not found" (D7).
   const bill = Number.isInteger(id) && id > 0 ? await getBill(staff.branch.id, id) : null;
   if (!bill) notFound();
-  const served = bill.items.filter((i) => i.status === "served");
+  // Charged dishes: served while open, finished once the Bill closed (restaurant-console spec, Print receipt).
+  const served = bill.items.filter((i) => CHARGED.includes(i.status));
   const status = bill.status === "open" ? "UNPAID" : bill.status.toUpperCase();
 
   return (

@@ -6,7 +6,8 @@ import {
   CATEGORIES,
   CATEGORY_LABELS,
   RESOLVED,
-  STATUS_LABELS,
+  customerLabel,
+  customerShouldPoll,
   paginateByCategory,
   type Category,
   type ItemStatus,
@@ -41,6 +42,8 @@ export const STATUS_STYLE: Record<ItemStatus, string> = {
   in_progress: "bg-sky-200 text-sky-900",
   served: "bg-emerald-200 text-emerald-900",
   cancelled: "bg-stone-100 text-stone-500 line-through",
+  voided: "bg-rose-100 text-rose-800 line-through",
+  finished: "bg-emerald-100 text-emerald-900",
 };
 
 export function TableApp({
@@ -84,7 +87,8 @@ export function TableApp({
       // transient network error: next poll retries
     }
   };
-  usePolling(refresh);
+  // Unknown yet (first load) counts as "poll"; afterwards pause with no open Bill and an empty own cart (D9).
+  usePolling(refresh, undefined, orders === null || customerShouldPoll(orders.session !== null, cart.lines.length));
 
   const switchLayout = () => {
     writeLocal("menuLayout", layout === "modern" ? "traditional" : "modern");
@@ -131,7 +135,7 @@ export function TableApp({
   };
 
   const cartCount = cart.lines.reduce((n, l) => n + l.qty, 0);
-  const activeOrders = orders?.items.filter((i) => i.status !== "cancelled").length ?? 0;
+  const activeOrders = orders?.items.filter((i) => i.status !== "cancelled" && i.status !== "voided").length ?? 0;
 
   const banners = (
     <>
@@ -650,15 +654,15 @@ function OrdersView({
             <div>
               <p className="font-medium">{i.name}</p>
               <OptionsAndNote options={i.options} note={i.note} />
-              <span className={`mt-1 inline-block rounded px-2 py-0.5 text-xs ${STATUS_STYLE[i.status]}`}>
-                {STATUS_LABELS[i.status]}
+              <span className={`mt-1 inline-block rounded px-2 py-0.5 text-xs ${STATUS_STYLE[i.status === "voided" ? "cancelled" : i.status]}`}>
+                {customerLabel(i.status)}
               </span>
               {i.status === "cancel_requested" && (
                 <p className="text-xs text-amber-800">Staff will come to your table to confirm.</p>
               )}
             </div>
             <div className="flex flex-col items-end gap-1">
-              <span className={i.status === "cancelled" ? "text-stone-400 line-through" : ""}>{baht(i.unitPrice)}</span>
+              <span className={i.status === "cancelled" || i.status === "voided" ? "text-stone-400 line-through" : ""}>{baht(i.unitPrice)}</span>
               {i.status === "pending" && (
                 <button onClick={() => onCancel(i.id)} className="text-sm text-red-700 underline">
                   Cancel

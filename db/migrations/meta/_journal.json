@@ -15,6 +15,13 @@
       "when": 1791965066281,
       "tag": "0001_branches_and_staff",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791969491179,
+      "tag": "0002_history_and_voids",
+      "breakpoints": true
     }
   ]
 }

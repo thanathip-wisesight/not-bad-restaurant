@@ -9,7 +9,7 @@
 | `add-customer-ordering-poc` | archive แล้ววันที่ 2026-10-14 เข้า `openspec/specs/` (งาน deploy 7.2 ยังค้างอยู่) | menu-browsing, ordering, order-tracking, payment, restaurant-console |
 | `console-desktop-layout` | archive แล้ววันที่ 2026-10-14 เข้า `openspec/specs/` | restaurant-console (เพิ่มเรื่อง layout) |
 | `add-branches-and-console-login` | archive แล้ววันที่ 2026-10-14 เข้า `openspec/specs/` | restaurant-branches, console-access (ใหม่); menu-browsing, payment, restaurant-console (แก้ไข) |
-| `add-order-history-voids-and-batch-actions` | วางแผนแล้ว ยังไม่ได้ implement (จะเพิ่มสรุปเมื่อ apply) | order-history (ใหม่); order-tracking, payment, restaurant-console (แก้ไข) |
+| `add-order-history-voids-and-batch-actions` | implement แล้ว ยังไม่ได้ archive (จะเพิ่มสรุปเมื่อ archive) | order-history (ใหม่); order-tracking, payment, restaurant-console (แก้ไข) |
 
 ## 1. ขอบเขต
 

@@ -69,8 +69,13 @@ export async function api<T>(path: string, method = "GET", body?: unknown): Prom
   return data as T;
 }
 
-// Calls fn now and every `ms` while the tab is visible.
-export function usePolling(fn: () => void, ms = 5000) {
+// Free-tier budget (design D9): 10 s keeps every screen within the spec's 15 s refresh limit.
+export const POLL_MS = 10_000;
+
+// Calls fn now and every `ms` while the tab is visible. When `active` is false there is no
+// periodic request at all; any interaction or returning to the tab calls fn once, which can
+// reactivate polling (order-tracking spec, Refresh pauses without an open Bill).
+export function usePolling(fn: () => void, ms = POLL_MS, active = true) {
   const ref = useRef(fn);
   useEffect(() => {
     ref.current = fn;
@@ -79,14 +84,21 @@ export function usePolling(fn: () => void, ms = 5000) {
     const tick = () => {
       if (!document.hidden) ref.current();
     };
-    tick();
-    const id = setInterval(tick, ms);
+    const wake = ["pointerdown", "keydown", "focus"] as const;
+    let id: ReturnType<typeof setInterval> | undefined;
+    if (active) {
+      tick();
+      id = setInterval(tick, ms);
+    } else {
+      wake.forEach((e) => window.addEventListener(e, tick));
+    }
     document.addEventListener("visibilitychange", tick);
     return () => {
       clearInterval(id);
+      wake.forEach((e) => window.removeEventListener(e, tick));
       document.removeEventListener("visibilitychange", tick);
     };
-  }, [ms]);
+  }, [ms, active]);
 }
 
 // True while the screen is landscape; server snapshot is portrait (design D15).

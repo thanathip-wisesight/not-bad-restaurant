@@ -28,6 +28,7 @@ Phase 3 (`rough-spec-phase-3.md`) targets edge cases and data: today a dish remo
 
 ### Modified Capabilities
 
+- `menu-browsing`: Retired `/t/<tableNo>` links get the standard not-found page instead of "table not found" (the dedicated route was removed).
 - `order-tracking`: Status lifecycle gains `voided` and `finished`; customer view shows both removed statuses as "Cancelled"; refresh limit 15 s; refreshing pauses when there is nothing to show.
 - `payment`: Payment gate, Bill total, and session closing account for `voided` and `finished`; refresh limit 15 s.
 - `restaurant-console`: Item actions (void with reason, cancel decisions with remark), Mark paid, Force-clear, receipt, board columns, header counts, table strip, table drawer, and overview refresh updated for the new statuses; new batch selection and batch update.

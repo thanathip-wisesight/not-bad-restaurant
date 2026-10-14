@@ -6,13 +6,15 @@ import {
   cartLines,
   menuItems,
   menuOptions,
+  orderItemEvents,
   orderItems,
   tableSessions,
   tables,
   tickets,
+  users,
   type OptionSnapshot,
 } from "../db/schema";
-import { ACTIONS, RESOLVED, STATUS_LABELS, billTotal, type Action, type Actor, type ItemStatus } from "./domain";
+import { ACTIONS, RESOLVED, STATUS_LABELS, billTotal, checkNote, type Action, type ItemStatus } from "./domain";
 
 export class AppError extends Error {
   constructor(
@@ -212,13 +214,30 @@ export async function confirmCart(branchCode: string, tableNo: number, deviceId:
         unitPrice: l.unitPrice,
       })),
     );
-    await tx.insert(orderItems).values(rows);
+    const created = await tx.insert(orderItems).values(rows).returning({ id: orderItems.id });
+    // History starts at confirmation: none -> pending, by this device, at the ticket's time (design D6).
+    await tx.insert(orderItemEvents).values(
+      created.map((c) => ({ orderItemId: c.id, fromStatus: null, toStatus: "pending" as const, at: ticket.createdAt, actor: "customer" as const, deviceId })),
+    );
     await tx.delete(cartLines).where(inArray(cartLines.id, lines.map((l) => l.id)));
     return { ticketId: ticket.id, itemCount: rows.length };
   });
 }
 
 // ---------- orders ----------
+
+// Latest staff reason/remark per dish; console-only (customers never see reasons, order-tracking spec).
+async function latestNotes(q: Q, itemIds: number[]) {
+  if (!itemIds.length) return new Map<number, string>();
+  const rows = await q
+    .select({ id: orderItemEvents.orderItemId, note: orderItemEvents.note })
+    .from(orderItemEvents)
+    .where(and(inArray(orderItemEvents.orderItemId, itemIds), sql`${orderItemEvents.note} is not null`))
+    .orderBy(desc(orderItemEvents.at), desc(orderItemEvents.id));
+  const map = new Map<number, string>();
+  for (const r of rows) if (!map.has(r.id)) map.set(r.id, r.note!);
+  return map;
+}
 
 async function sessionItems(q: Q, sessionId: number) {
   const rows = await q.select().from(orderItems).where(eq(orderItems.sessionId, sessionId)).orderBy(asc(orderItems.id));
@@ -261,44 +280,77 @@ export async function getTableOrders(branchCode: string, tableNo: number, device
 
 // Customers act on one table; staff on one branch. Items outside the scope behave as missing (D7).
 export type TransitionScope = { table: { branchCode: string; tableNo: number } } | { branchId: number };
+// Who made a change; recorded in the order history (order-history spec).
+export type ChangedBy = { kind: "customer"; deviceId: string } | { kind: "staff"; userId: number };
 
 const branchTables = (branchId: number) => db.select({ id: tables.id }).from(tables).where(eq(tables.branchId, branchId));
 
-// Single conditional UPDATE: concurrent conflicting transitions cannot both win (D5).
-export async function transitionItem(itemId: number, action: Action, actor: Actor, scope: TransitionScope) {
+export const MAX_BATCH = 100;
+
+// One rule path for single and batch changes (design D4): lock, validate, update, log, all with one timestamp.
+export async function transitionItems(
+  ids: number[],
+  action: Action,
+  by: ChangedBy,
+  scope: TransitionScope,
+  rawNote?: unknown,
+) {
   const a = ACTIONS[action];
-  if (a.actor !== actor) throw new AppError(403, "forbidden_action", "Action not allowed");
+  if (a.actor !== by.kind) throw new AppError(403, "forbidden_action", "Action not allowed");
+  const unique = [...new Set(ids)];
+  if (!unique.length || unique.length > MAX_BATCH || !unique.every((id) => Number.isInteger(id) && id > 0))
+    throw new AppError(400, "invalid_input", `Select between 1 and ${MAX_BATCH} dishes`);
+  const checked = checkNote(action, rawNote);
+  if ("error" in checked) throw new AppError(400, "invalid_note", checked.error);
   const inScope =
     "table" in scope
-      ? eq(tableSessions.tableId, (await requireTable(scope.table.branchCode, scope.table.tableNo)).id)
-      : inArray(tableSessions.tableId, branchTables(scope.branchId));
-  const openSessions = db
-    .select({ id: tableSessions.id })
-    .from(tableSessions)
-    .where(and(eq(tableSessions.status, "open"), inScope));
-  const [row] = await db
-    .update(orderItems)
-    .set({ status: a.to, updatedAt: new Date() })
-    .where(
-      and(
-        eq(orderItems.id, itemId),
-        inArray(orderItems.status, [...a.from]),
-        inArray(orderItems.sessionId, openSessions),
-      ),
-    )
-    .returning();
-  if (row) return { id: row.id, status: row.status };
+      ? eq(tables.id, (await requireTable(scope.table.branchCode, scope.table.tableNo)).id)
+      : eq(tables.branchId, scope.branchId);
 
-  const [cur] = await db
-    .select({ status: orderItems.status })
-    .from(orderItems)
-    .where(and(eq(orderItems.id, itemId), inArray(orderItems.sessionId, openSessions)));
-  if (!cur) throw new AppError(404, "item_not_found", "Order item not found");
-  const message =
-    action === "request_cancel" && cur.status === "in_progress"
-      ? "This dish is already being prepared and can no longer be cancelled."
-      : `Cannot ${a.label.toLowerCase()} an item that is ${STATUS_LABELS[cur.status].toLowerCase()}.`;
-  throw new AppError(409, "invalid_transition", message, { currentStatus: cur.status });
+  return db.transaction(async (tx) => {
+    // Locks in id order so concurrent batches cannot deadlock; a waiting batch re-reads the new status.
+    const rows = await tx
+      .select({ id: orderItems.id, status: orderItems.status, name: orderItems.nameSnapshot, tableId: tables.id })
+      .from(orderItems)
+      .innerJoin(tableSessions, eq(tableSessions.id, orderItems.sessionId))
+      .innerJoin(tables, eq(tables.id, tableSessions.tableId))
+      .where(and(inArray(orderItems.id, unique), eq(tableSessions.status, "open"), inScope))
+      .orderBy(asc(orderItems.id))
+      .for("update", { of: orderItems });
+    if (rows.length !== unique.length) throw new AppError(404, "item_not_found", "Order item not found");
+    if (new Set(rows.map((r) => r.tableId)).size > 1)
+      throw new AppError(400, "mixed_tables", "Selected dishes must belong to one table");
+
+    const conflicts = rows.filter((r) => !(a.from as readonly ItemStatus[]).includes(r.status));
+    if (conflicts.length) {
+      const message =
+        action === "request_cancel" && conflicts[0].status === "in_progress"
+          ? "This dish is already being prepared and can no longer be cancelled."
+          : `Cannot ${a.label.toLowerCase()}: ${conflicts.map((c) => `${c.name} is ${STATUS_LABELS[c.status].toLowerCase()}`).join(", ")}.`;
+      throw new AppError(409, "invalid_transition", message, {
+        currentStatus: conflicts[0].status,
+        conflicts: conflicts.map((c) => ({ id: c.id, name: c.name, status: c.status })),
+      });
+    }
+    if (new Set(rows.map((r) => r.status)).size > 1)
+      throw new AppError(400, "mixed_statuses", "Selected dishes must have the same status");
+
+    const at = new Date();
+    await tx.update(orderItems).set({ status: a.to, updatedAt: at }).where(inArray(orderItems.id, unique));
+    await tx.insert(orderItemEvents).values(
+      rows.map((r) => ({
+        orderItemId: r.id,
+        fromStatus: r.status,
+        toStatus: a.to,
+        at,
+        actor: by.kind,
+        staffUserId: by.kind === "staff" ? by.userId : null,
+        deviceId: by.kind === "customer" ? by.deviceId : null,
+        note: checked.note,
+      })),
+    );
+    return { ids: rows.map((r) => r.id), status: a.to, at: at.toISOString() };
+  });
 }
 
 // ---------- payment & closing ----------
@@ -323,8 +375,35 @@ async function assertPayable(tx: Tx, sessionId: number, deviceId: string | null,
     );
 }
 
+export const TABLE_CLEARED = "table cleared";
+const UNFINISHED: ItemStatus[] = ["pending", "cancel_requested", "in_progress"];
+
+// Final dish statuses when a Bill closes (order-tracking spec, design D5): served -> finished,
+// anything unfinished (only possible on force-clear) -> voided "table cleared"; logged as system, one timestamp.
 async function closeSession(tx: Tx, sessionId: number, status: "paid" | "voided") {
-  await tx.update(tableSessions).set({ status, closedAt: new Date() }).where(eq(tableSessions.id, sessionId));
+  const at = new Date();
+  const open = await tx
+    .select({ id: orderItems.id, status: orderItems.status })
+    .from(orderItems)
+    .where(and(eq(orderItems.sessionId, sessionId), inArray(orderItems.status, ["served", ...UNFINISHED])));
+  const finish = open.filter((i) => i.status === "served");
+  const voids = open.filter((i) => i.status !== "served");
+  if (finish.length)
+    await tx.update(orderItems).set({ status: "finished", updatedAt: at }).where(inArray(orderItems.id, finish.map((i) => i.id)));
+  if (voids.length)
+    await tx.update(orderItems).set({ status: "voided", updatedAt: at }).where(inArray(orderItems.id, voids.map((i) => i.id)));
+  if (open.length)
+    await tx.insert(orderItemEvents).values(
+      open.map((i) => ({
+        orderItemId: i.id,
+        fromStatus: i.status,
+        toStatus: i.status === "served" ? ("finished" as const) : ("voided" as const),
+        at,
+        actor: "system" as const,
+        note: i.status === "served" ? null : TABLE_CLEARED,
+      })),
+    );
+  await tx.update(tableSessions).set({ status, closedAt: at }).where(eq(tableSessions.id, sessionId));
   await tx.delete(cartLines).where(eq(cartLines.sessionId, sessionId));
 }
 
@@ -382,7 +461,9 @@ export async function consoleOverview(branchId: number) {
     all.map(async (t) => {
       const s = open.find((o) => o.tableId === t.id);
       if (!s) return { tableNumber: t.number, session: null };
-      const items = await sessionItems(db, s.id);
+      const plain = await sessionItems(db, s.id);
+      const notes = await latestNotes(db, plain.map((i) => i.id));
+      const items = plain.map((i) => ({ ...i, staffNote: notes.get(i.id) ?? null }));
       const carts = await cartQty(db, s.id);
       return {
         tableNumber: t.number,
@@ -408,7 +489,8 @@ export async function billHistory(branchId: number) {
       status: tableSessions.status,
       closedAt: tableSessions.closedAt,
       tableNumber: tables.number,
-      total: sql<number>`coalesce(sum(${orderItems.unitPrice}) filter (where ${orderItems.status} = 'served'), 0)`.mapWith(Number),
+      // CHARGED statuses: served while open, finished once the Bill closed (payment spec, Bill total).
+      total: sql<number>`coalesce(sum(${orderItems.unitPrice}) filter (where ${orderItems.status} in ('served', 'finished')), 0)`.mapWith(Number),
     })
     .from(tableSessions)
     .innerJoin(tables, eq(tables.id, tableSessions.tableId))
@@ -428,4 +510,105 @@ export async function getBill(branchId: number, sessionId: number) {
   if (!row) return null;
   const items = await sessionItems(db, sessionId);
   return { ...row.session, tableNumber: row.tableNumber, branchName: row.branchName, items, total: billTotal(items) };
+}
+
+// ---------- telemetry (order-history spec, design D7) ----------
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// [from, to) by order time; default last 30 days; at most 366 days.
+export function parseRange(from: string | null, to: string | null, now = new Date()) {
+  const parse = (v: string | null, fallback: Date) => {
+    if (v === null || v === "") return fallback;
+    const t = Date.parse(v);
+    if (!/^\d{4}-\d{2}-\d{2}/.test(v) || Number.isNaN(t)) throw new AppError(400, "invalid_range", `Invalid date: ${v}`);
+    return new Date(t);
+  };
+  const end = parse(to, now);
+  const start = parse(from, new Date(end.getTime() - 30 * DAY_MS));
+  if (start > end) throw new AppError(400, "invalid_range", "`from` must not be later than `to`");
+  if (end.getTime() - start.getTime() > 366 * DAY_MS) throw new AppError(400, "invalid_range", "Range must be at most 366 days");
+  return { from: start, to: end };
+}
+
+export function parseMenuItemId(v: string | null): number | undefined {
+  if (v === null || v === "") return undefined;
+  const n = Number(v);
+  if (!Number.isInteger(n) || n < 1) throw new AppError(400, "invalid_menu_item", "menuItemId must be a positive integer");
+  return n;
+}
+
+const inBranchAndRange = (branchId: number, range: { from: Date; to: Date }) =>
+  and(eq(tables.branchId, branchId), sql`${tickets.createdAt} >= ${range.from}`, sql`${tickets.createdAt} < ${range.to}`);
+
+// Per menu item: how often ordered, and how those dishes ended (finished / cancelled / voided).
+export async function dishCounts(branchId: number, range: { from: Date; to: Date }) {
+  const n = (status: ItemStatus) => sql<number>`count(*) filter (where ${orderItems.status} = ${status})`.mapWith(Number);
+  return db
+    .select({
+      menuItemId: orderItems.menuItemId,
+      name: sql<string>`(array_agg(${orderItems.nameSnapshot} order by ${orderItems.id} desc))[1]`,
+      ordered: sql<number>`count(*)`.mapWith(Number),
+      finished: n("finished"),
+      cancelled: n("cancelled"),
+      voided: n("voided"),
+    })
+    .from(orderItems)
+    .innerJoin(tickets, eq(tickets.id, orderItems.ticketId))
+    .innerJoin(tableSessions, eq(tableSessions.id, orderItems.sessionId))
+    .innerJoin(tables, eq(tables.id, tableSessions.tableId))
+    .where(inBranchAndRange(branchId, range))
+    .groupBy(orderItems.menuItemId)
+    .orderBy(desc(sql`count(*)`), asc(orderItems.menuItemId));
+}
+
+export const TIMELINE_LIMIT = 500;
+
+// Individual dishes (newest first, capped) with their full status log in time order.
+export async function dishTimelines(branchId: number, range: { from: Date; to: Date }, menuItemId?: number) {
+  const items = await db
+    .select({
+      id: orderItems.id,
+      menuItemId: orderItems.menuItemId,
+      name: orderItems.nameSnapshot,
+      status: orderItems.status,
+      billNo: tableSessions.billNo,
+      tableNumber: tables.number,
+      orderedAt: tickets.createdAt,
+    })
+    .from(orderItems)
+    .innerJoin(tickets, eq(tickets.id, orderItems.ticketId))
+    .innerJoin(tableSessions, eq(tableSessions.id, orderItems.sessionId))
+    .innerJoin(tables, eq(tables.id, tableSessions.tableId))
+    .where(and(inBranchAndRange(branchId, range), menuItemId ? eq(orderItems.menuItemId, menuItemId) : undefined))
+    .orderBy(desc(tickets.createdAt), desc(orderItems.id))
+    .limit(TIMELINE_LIMIT);
+  if (!items.length) return [];
+  const events = await db
+    .select({
+      orderItemId: orderItemEvents.orderItemId,
+      from: orderItemEvents.fromStatus,
+      to: orderItemEvents.toStatus,
+      at: orderItemEvents.at,
+      actor: orderItemEvents.actor,
+      username: users.username,
+      note: orderItemEvents.note,
+    })
+    .from(orderItemEvents)
+    .leftJoin(users, eq(users.id, orderItemEvents.staffUserId))
+    .where(inArray(orderItemEvents.orderItemId, items.map((i) => i.id)))
+    .orderBy(asc(orderItemEvents.at), asc(orderItemEvents.id));
+  return items.map((i) => ({
+    ...i,
+    orderedAt: i.orderedAt.toISOString(),
+    events: events
+      .filter((e) => e.orderItemId === i.id)
+      .map((e) => ({
+        from: e.from,
+        to: e.to,
+        at: e.at.toISOString(),
+        by: e.actor === "staff" ? (e.username ?? "staff") : e.actor,
+        note: e.note,
+      })),
+  }));
 }

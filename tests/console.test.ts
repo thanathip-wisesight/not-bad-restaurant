@@ -11,6 +11,7 @@ const item = (id: number, status: ItemStatus, minutesAgo: number) => ({
   unitPrice: 50,
   status,
   updatedAt: new Date(Date.UTC(2026, 0, 1, 12, 0) - minutesAgo * 60_000).toISOString(),
+  staffNote: null,
 });
 const table = (tableNumber: number, items: ReturnType<typeof item>[]) => ({
   tableNumber,
@@ -19,7 +20,7 @@ const table = (tableNumber: number, items: ReturnType<typeof item>[]) => ({
 
 describe("boardColumns", () => {
   const cols = boardColumns([
-    table(2, [item(1, "pending", 6), item(2, "served", 10), item(3, "cancelled", 1)]),
+    table(2, [item(1, "pending", 6), item(2, "served", 10), item(3, "cancelled", 1), item(8, "voided", 1)]),
     table(7, [item(4, "pending", 1), item(5, "served", 2), item(6, "cancel_requested", 3), item(7, "in_progress", 5)]),
     { tableNumber: 3, session: null },
   ]);
@@ -29,8 +30,9 @@ describe("boardColumns", () => {
     expect(BOARD_COLUMNS).toEqual(["cancel_requested", "pending", "in_progress", "served"]);
   });
 
-  it("drops cancelled dishes and tags table numbers", () => {
+  it("drops cancelled and voided dishes and tags table numbers", () => {
     expect(Object.values(cols).flat().map((c) => c.id)).not.toContain(3);
+    expect(Object.values(cols).flat().map((c) => c.id)).not.toContain(8);
     expect(cols.cancel_requested.map((c) => c.tableNumber)).toEqual([7]);
   });
 

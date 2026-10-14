@@ -3,7 +3,9 @@ import { randomUUID } from "node:crypto";
 import { and, count, eq, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { db, pool } from "../db";
-import { branches, menuItems, orderItems, tableSessions, tables, userBranches, users } from "../db/schema";
+import { branches, menuItems, orderItemEvents, orderItems, tableSessions, tables, userBranches, users } from "../db/schema";
+
+let STAFF: number; // area.manager belongs to both branches
 import { seedDatabase, seedUsersOnly } from "../db/seed";
 import {
   addCartLine,
@@ -14,7 +16,7 @@ import {
   getTableOrders,
   markPaid,
   payByTable,
-  transitionItem,
+  transitionItems,
 } from "../lib/service";
 
 const A = randomUUID();
@@ -27,6 +29,7 @@ beforeEach(async () => {
   [{ id: SIAM }] = await db.select().from(branches).where(eq(branches.code, "SIAM"));
   [{ id: ASOK }] = await db.select().from(branches).where(eq(branches.code, "ASOK"));
   [{ id: dish }] = await db.select().from(menuItems).limit(1);
+  [{ id: STAFF }] = await db.select().from(users).where(eq(users.username, "area.manager"));
 });
 afterAll(() => pool.end());
 
@@ -37,8 +40,8 @@ const order = async (branch: string, table: number) => {
   return { session: o.session!, item: o.items[0] };
 };
 const serve = async (branchId: number, id: number) => {
-  await transitionItem(id, "start", "staff", { branchId });
-  await transitionItem(id, "serve", "staff", { branchId });
+  await transitionItems([id], "start", { kind: "staff", userId: STAFF }, { branchId });
+  await transitionItems([id], "serve", { kind: "staff", userId: STAFF }, { branchId });
 };
 
 describe("2.1 branch isolation and Bill numbers", () => {
@@ -75,7 +78,7 @@ describe("2.2 console reads and actions are scoped to the selected branch", () =
 
   it("ids from another branch behave as missing and change nothing", async () => {
     const asok = await order("ASOK", 2);
-    await expect(transitionItem(asok.item.id, "start", "staff", { branchId: SIAM })).rejects.toMatchObject({ status: 404 });
+    await expect(transitionItems([asok.item.id], "start", { kind: "staff", userId: STAFF }, { branchId: SIAM })).rejects.toMatchObject({ status: 404 });
     await expect(markPaid(SIAM, asok.session.id, false)).rejects.toMatchObject({ status: 404 });
     expect(await getBill(SIAM, asok.session.id)).toBeNull();
     const [row] = await db.select().from(orderItems).where(eq(orderItems.id, asok.item.id));
@@ -122,6 +125,8 @@ describe("2.4 --users-only seed is non-destructive and repeatable", () => {
     const paid = await order("SIAM", 5);
     await serve(SIAM, paid.item.id);
     await payByTable("SIAM", 5, A, false);
+    // A database from before staff logins has no staff-attributed history either.
+    await db.delete(orderItemEvents);
     await db.delete(users);
     await db.delete(tables).where(eq(tables.branchId, ASOK));
     await db.delete(branches).where(eq(branches.code, "ASOK"));
