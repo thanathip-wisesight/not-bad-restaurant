@@ -1,31 +1,39 @@
 import Link from "next/link";
-import { connection } from "next/server";
 import { Suspense } from "react";
 import { baht, formatTime } from "@/lib/format";
 import { billHistory } from "@/lib/service";
+import { NoBranchAccess, staffForPage } from "../../guard";
 
 export const metadata = { title: "Bill history · Not Bad Restaurant" };
 
-export default function HistoryPage() {
+export default function HistoryPage({ params }: PageProps<"/console/[branch]/history">) {
+  return (
+    <Suspense fallback={<p className="p-6 text-stone-500">Loading…</p>}>
+      <Bills params={params} />
+    </Suspense>
+  );
+}
+
+// Closed bills of the selected branch only (restaurant-console spec, Bill history).
+async function Bills({ params }: Pick<PageProps<"/console/[branch]/history">, "params">) {
+  const { branch: code } = await params;
+  const staff = await staffForPage(`/console/${code}/history`, code);
+  if (staff === "forbidden") return <NoBranchAccess branchCode={code} />;
+  const bills = await billHistory(staff.branch.id);
   return (
     <main className="mx-auto max-w-3xl p-4 xl:max-w-none xl:px-8">
       <header className="flex items-center justify-between">
-        <h1 className="text-xl font-bold">Bill history</h1>
-        <Link href="/console" className="text-sm underline">
+        <h1 className="text-xl font-bold">Bill history · {staff.branch.name}</h1>
+        <Link href={`/console/${code}`} className="text-sm underline">
           Back to console
         </Link>
       </header>
-      <Suspense fallback={<p className="mt-6 text-stone-500">Loading…</p>}>
-        <Bills />
-      </Suspense>
+      {bills.length ? <BillTable bills={bills} branchCode={code} /> : <p className="mt-6 text-stone-500">No closed bills yet.</p>}
     </main>
   );
 }
 
-async function Bills() {
-  await connection();
-  const bills = await billHistory();
-  if (!bills.length) return <p className="mt-6 text-stone-500">No closed bills yet.</p>;
+function BillTable({ bills, branchCode }: { bills: Awaited<ReturnType<typeof billHistory>>; branchCode: string }) {
   return (
     <table className="mt-4 w-full text-sm">
       <thead>
@@ -47,7 +55,7 @@ async function Bills() {
             <td className="text-right">{baht(b.total)}</td>
             <td className={b.status === "voided" ? "text-red-700" : "text-emerald-700"}>{b.status}</td>
             <td className="text-right">
-              <Link href={`/console/bills/${b.id}/print`} className="underline">
+              <Link href={`/console/${branchCode}/bills/${b.id}/print`} className="underline">
                 Open / print
               </Link>
             </td>

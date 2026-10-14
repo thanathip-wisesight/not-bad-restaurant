@@ -6,15 +6,15 @@ Plain-language summary of the main specs in `openspec/specs/` plus the deltas of
 |---|---|---|
 | `add-customer-ordering-poc` | Archived 2026-10-14 into `openspec/specs/` (deploy 7.2 still open) | menu-browsing, ordering, order-tracking, payment, restaurant-console |
 | `console-desktop-layout` | Archived 2026-10-14 into `openspec/specs/` | restaurant-console (layout additions) |
-| `add-branches-and-console-login` | Planned, not implemented (summary will be added when applied) | restaurant-branches, console-access (new); menu-browsing, payment, restaurant-console (modified) |
+| `add-branches-and-console-login` | Implemented, not yet archived | restaurant-branches, console-access (new); menu-browsing, payment, restaurant-console (modified) |
 
 ## 1. Scope
 
-A mobile web app for diners to order from their table, plus a staff console. It is a demo:
+A mobile web app for diners to order from their table, plus a staff console, for a brand with several branches. It is a demo:
 
-- **No** login, permissions, or security hardening.
+- Customers **never** log in. Staff log in to the console (section 9); beyond that there is **no** security hardening (no rate limiting, lockout, audit log, or password rules).
 - **No** real payment. QR payment is simulated.
-- **No** promotions, menu editing, sold-out flags, multiple restaurants, language switching, or tax invoices.
+- **No** promotions, menu editing, sold-out flags, per-branch menus or prices, language switching, tax invoices, sign-up, or account administration.
 
 ## 2. Words we use
 
@@ -25,10 +25,11 @@ A mobile web app for diners to order from their table, plus a staff console. It 
 | **Ticket** | One batch of dishes a phone sent to the kitchen. |
 | **Bill** | Everything ordered at a table during one visit. This is what gets paid. |
 | **Table session** | One visit at a table, from the first dish added to a cart until the bill is paid or staff clear the table. |
+| **Branch** | One restaurant location, with a short code (e.g. `SIAM`) and a name. Each has its own tables. |
 
 ## 3. Menu (menu-browsing)
 
-- Each table's QR code opens `/t/<table number>`. The page shows the table number. An unknown table number shows "table not found".
+- Each table's QR code opens `/b/<branch code>/t/<table number>`, e.g. `/b/SIAM/t/5`. The page shows the branch name and table number. An unknown branch or table, or an old `/t/<n>` link, shows "table not found".
 - Scanning alone does not start a visit.
 - Six categories, in this order: Main, A la carte, Soup, Special, Dessert, Drink.
 - Each dish shows its Thai and English names, a picture or placeholder, its price in whole Baht, and an **Add** button.
@@ -79,7 +80,7 @@ A mobile web app for diners to order from their table, plus a staff console. It 
 | Pending or In progress | Cancelled | Staff (void) |
 
   Every other change is refused. A dish with a cancel request **cannot be started** until staff resolve it, and customers cannot take a cancel request back.
-- The **Orders** tab shows every dish sent from **all** phones at the table: name, extras, note, price, and status. It also shows the bill number (e.g. `T05-0042`) and the running total of served dishes.
+- The **Orders** tab shows every dish sent from **all** phones at the table: name, extras, note, price, and status. It also shows the bill number (e.g. `SIAM-T05-0042`) and the running total of served dishes.
 - Changes made by staff or other phones appear within 10 seconds, with no reload.
 - Customers see the Cancel button only on Pending dishes. If the kitchen started a dish before the cancel request arrived, the customer is told it is already being prepared.
 
@@ -92,10 +93,10 @@ A mobile web app for diners to order from their table, plus a staff console. It 
   Otherwise the app says what is blocking payment.
 - If other phones at the table still hold unsent dishes, a warning says how many will be discarded and asks the table to sort it out first. Payment goes ahead only after **Pay anyway**. Dismissing the warning changes nothing. Staff see the same warning when marking a bill paid.
 - The bill total is the sum of served dishes, extras included. Cancelled dishes count as zero.
-- Each visit has a bill number, unique across all visits, made of the table number and a sequence (e.g. `T05-0042`).
+- Each visit has a bill number, unique across all visits, made of the branch code, the table number, and a sequence (e.g. `SIAM-T05-0042`). Bills issued before branches existed keep their old form (e.g. `T05-0042`).
 - Two ways to pay:
   - **QR (simulated):** pick a pretend bank app. The bill is marked paid and the menu shows a success message. No real payment system is involved.
-  - **Cashier:** show the bill number at the counter; staff mark it paid in the console.
+  - **Cashier:** show the bill number at the counter; staff mark it paid in that branch's console.
 - Once a bill is paid:
   - the visit ends automatically
   - every phone at the table sees an empty Orders tab within 10 seconds
@@ -105,16 +106,18 @@ A mobile web app for diners to order from their table, plus a staff console. It 
 
 ## 7. Restaurant console (restaurant-console)
 
+Everything below applies to the **selected branch only**; other branches' tables and bills never appear.
+
 ### What staff can do (all screen sizes)
 
-- See every table, either free or with its open bill: bill number, status, total, and each dish's name, extras, note, and status. Cancel requests are highlighted. The view refreshes within 10 seconds.
+- See every table of the branch, either free or with its open bill: bill number, status, total, and each dish's name, extras, note, and status. Cancel requests are highlighted. The view refreshes within 10 seconds.
 - Per dish, only the buttons valid for its status are offered: **Start**, **Serve**, **Void**, **Confirm cancel**, **Reject cancel**.
 - **Mark paid** (cashier payments):
   - only allowed when every dish is served or cancelled; otherwise the unresolved dishes are named
   - same effect as a customer payment, including the unsent-dishes warning
 - **Clear table** (walk-outs, abandoned tables): asks for confirmation. An unpaid bill is recorded as *voided*. The visit closes and the bill stays in history.
 - **Print bill**: opens the browser print dialog with a receipt showing:
-  - restaurant name, table, bill number, date and time
+  - restaurant name, branch name, table, bill number, date and time
   - served dishes with extras and prices
   - total
   - paid / unpaid / voided
@@ -142,12 +145,31 @@ The console is mainly used on a tablet or cashier PC, and still works on a phone
 - **Phone (below 768 px):** the per-table card list, with a count bar at the top (cancel requests highlighted, pending, in progress).
 - **Bill history** uses the full width on screens 1280 px and wider. The printed receipt keeps its receipt width.
 
-## 8. Technical choices (summary)
+## 8. Branches (restaurant-branches)
+
+- Each branch has a unique short code and a name: **SIAM** ("Not Bad Siam", 10 tables) and **ASOK** ("Not Bad Asok", 6 tables).
+- Every branch numbers its tables from 1, so SIAM table 5 and ASOK table 5 are different tables.
+- All branches share one menu with the same prices.
+- Carts, orders, and bills belong to the branch of their table. Ordering or paying at a table in one branch never affects another branch.
+- Data from before branches existed (tables, orders, bills, history) now belongs to SIAM, with bill numbers unchanged.
+
+## 9. Staff login and branch access (console-access)
+
+- `/console` and everything under it, plus every console API, need a staff login. The customer side never does.
+- **Log in** at `/login` with username and password. A wrong username or password shows the same message: "Invalid username or password". Passwords are stored only as salted hashes.
+- After login, staff return to the page they asked for. Someone with one branch goes straight to that branch's console (`/console/SIAM`). Someone with several picks a branch, and can **Switch branch** later from the console header.
+- A login lasts until **24 hours without console activity**, or until **Log out**.
+- Staff can only see and act on branches they belong to. Opening another branch shows "No access to this branch", and the API refuses it (403). A dish or bill id from another branch is treated as not found, and nothing changes.
+- Accounts come only from the seed: `siam.staff` (SIAM) and `area.manager` (SIAM and ASOK). There is no sign-up or account administration.
+
+## 10. Technical choices (summary)
 
 - Next.js app on Vercel, using Cache Components.
 - Postgres: Neon in production, Docker locally. Accessed through Drizzle and the `pg` driver.
-- Seed data: 10 tables and 60 Thai dishes.
+- Seed data: branches SIAM (10 tables) and ASOK (6 tables), 60 Thai dishes, two staff accounts. `--users-only` adds branches and accounts to an existing database without touching its history.
+- Login uses only Node's built-in `crypto` (scrypt for passwords). The session cookie can't be read by page scripts, and only a hash of it is stored.
 - Phones and the console check the server every 5 seconds. Vercel functions cannot hold open the live connections that push updates would need.
 - Details:
   - `openspec/changes/archive/2026-10-14-add-customer-ordering-poc/design.md`
   - `openspec/changes/archive/2026-10-14-console-desktop-layout/design.md`
+  - `openspec/changes/add-branches-and-console-login/design.md`

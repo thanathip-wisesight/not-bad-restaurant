@@ -8,7 +8,8 @@ import { ApiError, api } from "@/lib/client";
 // Simulated bank apps only (design D11): no real payment system is contacted.
 const BANKS = ["K PLUS (simulated)", "SCB EASY (simulated)", "Krungthai NEXT (simulated)", "Bangkok Bank (simulated)"];
 
-export function BankPicker({ tableNumber, force }: { tableNumber: number; force: boolean }) {
+export function BankPicker({ branchCode, tableNumber, force }: { branchCode: string; tableNumber: number; force: boolean }) {
+  const page = `/b/${branchCode}/t/${tableNumber}`;
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -17,8 +18,8 @@ export function BankPicker({ tableNumber, force }: { tableNumber: number; force:
     setBusy(true);
     setError(null);
     try {
-      await api(`/api/tables/${tableNumber}/pay`, "POST", { force });
-      router.replace(`/t/${tableNumber}?paid=1`);
+      await api(`/api/b/${branchCode}/tables/${tableNumber}/pay`, "POST", { force });
+      router.replace(`${page}?paid=1`);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Payment failed");
       setBusy(false);
@@ -39,7 +40,7 @@ export function BankPicker({ tableNumber, force }: { tableNumber: number; force:
         ))}
       </ul>
       {error && <p className="mt-4 rounded bg-amber-50 p-3 text-sm text-amber-900">{error}</p>}
-      <Link href={`/t/${tableNumber}`} className="mt-6 block text-center text-sm underline">
+      <Link href={page} className="mt-6 block text-center text-sm underline">
         Back to menu
       </Link>
     </main>

@@ -13,7 +13,7 @@ The brand runs more than one branch, so a table number alone no longer identifie
 - Existing tables, carts, orders, and bill history are migrated to branch SIAM; Bill numbers already issued are kept as they are.
 - Staff log in with username and password; a session cookie keeps them logged in until 24 hours without activity or until they log out.
 - All of `/console` (board, history, print) and every console API require login. A user with one branch lands on that branch's console; a user with several picks a branch and can switch later. Every console read and action is limited to the selected branch, enforced on the server.
-- Staff users are seeded only (`siam.staff`: SIAM; `area.manager`: SIAM and ASOK). The customer side stays open, without login.
+- Staff users are seeded only (`siam.staff`: SIAM; `area.manager`: SIAM and ASOK). A non-destructive `--users-only` seed mode adds branches and staff accounts to an existing database without touching its history. The customer side stays open, without login.
 
 ### Non-goals
 

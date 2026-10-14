@@ -1,8 +1,12 @@
-import { connection } from "next/server";
+import { requireStaff } from "@/lib/auth";
 import { json } from "@/lib/http";
 import { consoleOverview } from "@/lib/service";
 
-export async function GET() {
-  await connection(); // always read live DB state (cacheComponents would otherwise try to prerender)
-  return json(consoleOverview);
+type Ctx = { params: Promise<{ branch: string }> };
+
+export async function GET(req: Request, { params }: Ctx) {
+  return json(async () => {
+    const { branch } = await requireStaff(req, (await params).branch);
+    return consoleOverview(branch.id);
+  });
 }

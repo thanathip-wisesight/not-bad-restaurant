@@ -43,8 +43,19 @@ export const STATUS_STYLE: Record<ItemStatus, string> = {
   cancelled: "bg-stone-100 text-stone-500 line-through",
 };
 
-export function TableApp({ tableNumber, menu }: { tableNumber: number; menu: MenuItemDto[] }) {
-  const base = `/api/tables/${tableNumber}`;
+export function TableApp({
+  branchCode,
+  branchName,
+  tableNumber,
+  menu,
+}: {
+  branchCode: string;
+  branchName: string;
+  tableNumber: number;
+  menu: MenuItemDto[];
+}) {
+  const base = `/api/b/${branchCode}/tables/${tableNumber}`;
+  const page = `/b/${branchCode}/t/${tableNumber}`;
   const router = useRouter();
   const [tab, setTab] = useState<Tab>("menu");
   const [cart, setCart] = useState<Cart>({ lines: [], total: 0 });
@@ -116,7 +127,7 @@ export function TableApp({ tableNumber, menu }: { tableNumber: number; menu: Men
       return setPayWarning(
         `${orders.otherCartQty} unsent dish(es) on other phones at this table will be discarded. Please sort it out at the table first.`,
       );
-    router.push(`/t/${tableNumber}/pay`);
+    router.push(`${page}/pay`);
   };
 
   const cartCount = cart.lines.reduce((n, l) => n + l.qty, 0);
@@ -127,7 +138,7 @@ export function TableApp({ tableNumber, menu }: { tableNumber: number; menu: Men
       {paid && (
         <div role="status" className="mx-4 mt-3 flex justify-between rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-900 shadow">
           <span>Payment successful. Thank you!</span>
-          <button onClick={() => router.replace(`/t/${tableNumber}`)} aria-label="Dismiss">
+          <button onClick={() => router.replace(page)} aria-label="Dismiss">
             ✕
           </button>
         </div>
@@ -160,7 +171,7 @@ export function TableApp({ tableNumber, menu }: { tableNumber: number; menu: Men
       onCancel={requestCancel}
       onPay={startPay}
       payWarning={payWarning}
-      onPayAnyway={() => router.push(`/t/${tableNumber}/pay?force=1`)}
+      onPayAnyway={() => router.push(`${page}/pay?force=1`)}
       onDismissWarning={() => setPayWarning(null)}
     />
   );
@@ -184,6 +195,7 @@ export function TableApp({ tableNumber, menu }: { tableNumber: number; menu: Men
         <TraditionalMenu
           menu={menu}
           tableNumber={tableNumber}
+          branchName={branchName}
           cartCount={cartCount}
           orderCount={activeOrders}
           onOpen={setTab}
@@ -218,7 +230,7 @@ export function TableApp({ tableNumber, menu }: { tableNumber: number; menu: Men
     <div className="mx-auto flex min-h-dvh max-w-md flex-col bg-white">
       <header className="sticky top-0 z-20 flex items-center justify-between border-b bg-white px-4 py-3">
         <div>
-          <p className="text-xs text-stone-500">Not Bad Restaurant</p>
+          <p className="text-xs text-stone-500">{branchName}</p>
           <h1 className="text-lg font-bold">Table {tableNumber}</h1>
         </div>
         {tab === "menu" && (
@@ -312,6 +324,7 @@ function MenuView({ menu, onAdd }: { menu: MenuItemDto[]; onAdd: (i: MenuItemDto
 function TraditionalMenu({
   menu,
   tableNumber,
+  branchName,
   cartCount,
   orderCount,
   onOpen,
@@ -320,6 +333,7 @@ function TraditionalMenu({
 }: {
   menu: MenuItemDto[];
   tableNumber: number;
+  branchName: string;
   cartCount: number;
   orderCount: number;
   onOpen: (tab: Tab) => void;
@@ -351,7 +365,9 @@ function TraditionalMenu({
   return (
     <>
       <header className="flex shrink-0 items-center gap-2 border-b px-2 py-1">
-        <h1 className="shrink-0 text-sm font-bold">Table {tableNumber}</h1>
+        <h1 className="shrink-0 text-sm font-bold">
+          <span className="font-normal text-stone-500">{branchName} · </span>Table {tableNumber}
+        </h1>
         <div className="flex min-w-0 flex-1 gap-1 overflow-x-auto" data-testid="category-tabs">
           {present.map((c) => (
             <button

@@ -1,6 +1,7 @@
 "use client";
 
 // Shared console pieces (console-desktop-layout design D6): one place for data, actions and their rules.
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { STATUS_STYLE } from "@/components/table-app";
 import { ACTIONS, STATUS_LABELS, actionsFor, type Action, type ItemStatus } from "@/lib/domain";
@@ -16,17 +17,22 @@ export type ConsoleHandlers = {
   print: (sessionId: number) => void;
 };
 
-export function useConsoleData() {
+export function useConsoleData(branchCode: string) {
+  const base = `/api/console/${branchCode}`;
+  const router = useRouter();
   const [tables, setTables] = useState<ConsoleTableDto[] | null>(null);
   const [now, setNow] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = async () => {
     try {
-      setTables(await api<ConsoleTableDto[]>("/api/console/tables"));
+      setTables(await api<ConsoleTableDto[]>(`${base}/tables`));
       setNow(Date.now());
-    } catch {
-      // next poll retries
+    } catch (e) {
+      // Session expired or logged out elsewhere: back to login, then here (console-access spec).
+      if (e instanceof ApiError && e.status === 401)
+        router.replace(`/login?next=${encodeURIComponent(window.location.pathname)}`);
+      // anything else: next poll retries
     }
   };
   usePolling(refresh);
@@ -42,15 +48,15 @@ export function useConsoleData() {
   };
 
   const handlers: ConsoleHandlers = {
-    act: (itemId, action) => run(() => api(`/api/console/items/${itemId}`, "POST", { action })),
+    act: (itemId, action) => run(() => api(`${base}/items/${itemId}`, "POST", { action })),
     markPaid: (sessionId) =>
       run(async () => {
         try {
-          await api(`/api/console/sessions/${sessionId}/pay`, "POST", { force: false });
+          await api(`${base}/sessions/${sessionId}/pay`, "POST", { force: false });
         } catch (e) {
           if (e instanceof ApiError && e.body.error === "unsent_carts") {
             if (window.confirm(`${e.message}\n\nPay anyway?`))
-              await api(`/api/console/sessions/${sessionId}/pay`, "POST", { force: true });
+              await api(`${base}/sessions/${sessionId}/pay`, "POST", { force: true });
             return;
           }
           if (e instanceof ApiError && e.body.error === "unresolved_items") {
@@ -64,9 +70,9 @@ export function useConsoleData() {
       }),
     clear: (sessionId, tableNumber) => {
       if (window.confirm(`Clear table ${tableNumber}? An unpaid bill will be recorded as voided.`))
-        run(() => api(`/api/console/sessions/${sessionId}/clear`, "POST"));
+        run(() => api(`${base}/sessions/${sessionId}/clear`, "POST"));
     },
-    print: (sessionId) => window.open(`/console/bills/${sessionId}/print?print=1`, "_blank"),
+    print: (sessionId) => window.open(`/console/${branchCode}/bills/${sessionId}/print?print=1`, "_blank"),
   };
 
   return { tables, now, error, handlers };

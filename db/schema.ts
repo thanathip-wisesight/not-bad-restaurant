@@ -6,9 +6,11 @@ import {
   pgEnum,
   pgSequence,
   pgTable,
+  primaryKey,
   serial,
   text,
   timestamp,
+  unique,
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
@@ -20,10 +22,24 @@ export const itemStatusEnum = pgEnum("item_status", ITEM_STATUSES);
 
 export const billSeq = pgSequence("bill_seq");
 
-export const tables = pgTable("tables", {
+export const branches = pgTable("branches", {
   id: serial("id").primaryKey(),
-  number: integer("number").notNull().unique(),
+  code: text("code").notNull().unique(),
+  name: text("name").notNull(),
 });
+
+// A table's branch is the only place branch is stored; sessions, carts and orders reach it via the table (D1).
+export const tables = pgTable(
+  "tables",
+  {
+    id: serial("id").primaryKey(),
+    branchId: integer("branch_id")
+      .notNull()
+      .references(() => branches.id),
+    number: integer("number").notNull(),
+  },
+  (t) => [unique("tables_branch_number_unique").on(t.branchId, t.number)],
+);
 
 export const menuItems = pgTable("menu_items", {
   id: serial("id").primaryKey(),
@@ -90,4 +106,35 @@ export const orderItems = pgTable("order_items", {
   unitPrice: integer("unit_price").notNull(),
   status: itemStatusEnum("status").notNull().default("pending"),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ---------- staff access (console-access spec, D5) ----------
+
+export const users = pgTable("users", {
+  id: serial("id").primaryKey(),
+  username: text("username").notNull().unique(),
+  passwordHash: text("password_hash").notNull(),
+  displayName: text("display_name").notNull(),
+});
+
+export const userBranches = pgTable(
+  "user_branches",
+  {
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    branchId: integer("branch_id")
+      .notNull()
+      .references(() => branches.id, { onDelete: "cascade" }),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.branchId] })],
+);
+
+// Only the SHA-256 of the cookie token is stored.
+export const staffSessions = pgTable("staff_sessions", {
+  tokenHash: text("token_hash").primaryKey(),
+  userId: integer("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
 });

@@ -79,4 +79,14 @@ export const MENU: Record<Category, Dish[]> = {
   ],
 };
 
-export const TABLE_COUNT = 10;
+// Branches and their table counts (restaurant-branches spec). SIAM also exists from the migration.
+export const BRANCHES = [
+  { code: "SIAM", name: "Not Bad Siam", tables: 10 },
+  { code: "ASOK", name: "Not Bad Asok", tables: 6 },
+] as const;
+
+// Demo staff accounts (console-access spec). Passwords are for the demo only and are listed in the README.
+export const STAFF = [
+  { username: "siam.staff", password: "siam-demo", displayName: "Siam Staff", branches: ["SIAM"] },
+  { username: "area.manager", password: "manager-demo", displayName: "Area Manager", branches: ["SIAM", "ASOK"] },
+] as const;

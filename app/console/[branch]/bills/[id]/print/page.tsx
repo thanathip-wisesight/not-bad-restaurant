@@ -1,14 +1,14 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { connection } from "next/server";
 import { Suspense } from "react";
 import { baht, formatTime } from "@/lib/format";
 import { getBill } from "@/lib/service";
+import { NoBranchAccess, staffForPage } from "../../../../guard";
 import { PrintButton } from "./print-button";
 
 export const metadata = { title: "Receipt · Not Bad Restaurant" };
 
-export default function PrintPage({ params }: PageProps<"/console/bills/[id]/print">) {
+export default function PrintPage({ params }: PageProps<"/console/[branch]/bills/[id]/print">) {
   return (
     <Suspense fallback={null}>
       <Receipt params={params} />
@@ -16,10 +16,13 @@ export default function PrintPage({ params }: PageProps<"/console/bills/[id]/pri
   );
 }
 
-async function Receipt({ params }: Pick<PageProps<"/console/bills/[id]/print">, "params">) {
-  await connection();
-  const id = Number((await params).id);
-  const bill = Number.isInteger(id) && id > 0 ? await getBill(id) : null;
+async function Receipt({ params }: Pick<PageProps<"/console/[branch]/bills/[id]/print">, "params">) {
+  const p = await params;
+  const staff = await staffForPage(`/console/${p.branch}/bills/${p.id}/print`, p.branch);
+  if (staff === "forbidden") return <NoBranchAccess branchCode={p.branch} />;
+  const id = Number(p.id);
+  // A Bill of another branch is "not found" (D7).
+  const bill = Number.isInteger(id) && id > 0 ? await getBill(staff.branch.id, id) : null;
   if (!bill) notFound();
   const served = bill.items.filter((i) => i.status === "served");
   const status = bill.status === "open" ? "UNPAID" : bill.status.toUpperCase();
@@ -27,12 +30,13 @@ async function Receipt({ params }: Pick<PageProps<"/console/bills/[id]/print">, 
   return (
     <main className="mx-auto max-w-xs bg-white p-4 font-mono text-sm text-black">
       <div className="mb-4 flex justify-between print:hidden">
-        <Link href="/console" className="underline">
+        <Link href={`/console/${p.branch}`} className="underline">
           Console
         </Link>
         <PrintButton />
       </div>
       <h1 className="text-center text-base font-bold">Not Bad Restaurant</h1>
+      <p className="text-center">{bill.branchName}</p>
       <p className="text-center">RECEIPT</p>
       <hr className="my-2 border-dashed border-black" />
       <p>Bill: {bill.billNo}</p>

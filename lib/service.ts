@@ -2,6 +2,7 @@
 import { and, asc, desc, eq, inArray, ne, sql, sum } from "drizzle-orm";
 import { db, type Db, type Tx } from "../db";
 import {
+  branches,
   cartLines,
   menuItems,
   menuOptions,
@@ -28,15 +29,26 @@ type Q = Db | Tx;
 
 // ---------- tables & menu ----------
 
-export async function getTable(number: number) {
-  const [t] = await db.select().from(tables).where(eq(tables.number, number));
+// A table is addressed by branch code + number (restaurant-branches spec, D4).
+export async function getTable(branchCode: string, number: number) {
+  const [t] = await db
+    .select({ id: tables.id, number: tables.number, branchId: branches.id, branchCode: branches.code, branchName: branches.name })
+    .from(tables)
+    .innerJoin(branches, eq(branches.id, tables.branchId))
+    .where(and(eq(branches.code, branchCode), eq(tables.number, number)));
   return t ?? null;
 }
+type TableRow = NonNullable<Awaited<ReturnType<typeof getTable>>>;
 
-async function requireTable(number: number) {
-  const t = await getTable(number);
+async function requireTable(branchCode: string, number: number) {
+  const t = await getTable(branchCode, number);
   if (!t) throw new AppError(404, "table_not_found", "Table not found");
   return t;
+}
+
+export async function getBranch(code: string) {
+  const [b] = await db.select().from(branches).where(eq(branches.code, code));
+  return b ?? null;
 }
 
 export async function getMenu() {
@@ -67,10 +79,11 @@ async function findOpenSession(q: Q, tableId: number, lock = false) {
 }
 
 // Idempotent under concurrent first adds: the partial unique index lets only one open row exist (D4, D8).
-async function openSession(table: { id: number; number: number }) {
+async function openSession(table: TableRow) {
+  // Bill number: <BRANCH>-T<table>-<global sequence>, e.g. SIAM-T05-0042 (payment spec, D3).
   await db.execute(sql`
     INSERT INTO table_sessions (table_id, bill_no)
-    VALUES (${table.id}, 'T' || lpad(${String(table.number)}, 2, '0') || '-' || lpad(nextval('bill_seq')::text, 4, '0'))
+    VALUES (${table.id}, ${table.branchCode} || '-T' || lpad(${String(table.number)}, 2, '0') || '-' || lpad(nextval('bill_seq')::text, 4, '0'))
     ON CONFLICT (table_id) WHERE status = 'open' DO NOTHING`);
   const s = await findOpenSession(db, table.id);
   if (!s) throw new AppError(500, "session_open_failed", "Could not open table session");
@@ -118,8 +131,8 @@ async function priceLines<T extends { menuItemId: number; optionIds: number[] }>
   });
 }
 
-export async function listCart(tableNo: number, deviceId: string) {
-  const table = await requireTable(tableNo);
+export async function listCart(branchCode: string, tableNo: number, deviceId: string) {
+  const table = await requireTable(branchCode, tableNo);
   const session = await findOpenSession(db, table.id);
   if (!session) return { lines: [], total: 0 };
   const rows = await db
@@ -142,39 +155,39 @@ export async function listCart(tableNo: number, deviceId: string) {
 }
 export type CartLineDto = Awaited<ReturnType<typeof listCart>>["lines"][number];
 
-export async function addCartLine(tableNo: number, deviceId: string, input: CartInput) {
-  const table = await requireTable(tableNo);
+export async function addCartLine(branchCode: string, tableNo: number, deviceId: string, input: CartInput) {
+  const table = await requireTable(branchCode, tableNo);
   await assertItemOptions(input);
   const session = await openSession(table);
   const [line] = await db.insert(cartLines).values({ sessionId: session.id, deviceId, ...input }).returning();
   return line;
 }
 
-async function ownLineWhere(tableNo: number, deviceId: string, lineId: number) {
-  const table = await requireTable(tableNo);
+async function ownLineWhere(branchCode: string, tableNo: number, deviceId: string, lineId: number) {
+  const table = await requireTable(branchCode, tableNo);
   const session = await findOpenSession(db, table.id);
   if (!session) throw new AppError(404, "line_not_found", "Cart line not found");
   return and(eq(cartLines.id, lineId), eq(cartLines.sessionId, session.id), eq(cartLines.deviceId, deviceId));
 }
 
-export async function updateCartLine(tableNo: number, deviceId: string, lineId: number, input: CartInput) {
+export async function updateCartLine(branchCode: string, tableNo: number, deviceId: string, lineId: number, input: CartInput) {
   await assertItemOptions(input);
-  const where = await ownLineWhere(tableNo, deviceId, lineId);
+  const where = await ownLineWhere(branchCode, tableNo, deviceId, lineId);
   const [line] = await db.update(cartLines).set(input).where(where).returning();
   if (!line) throw new AppError(404, "line_not_found", "Cart line not found");
   return line;
 }
 
-export async function removeCartLine(tableNo: number, deviceId: string, lineId: number) {
-  const where = await ownLineWhere(tableNo, deviceId, lineId);
+export async function removeCartLine(branchCode: string, tableNo: number, deviceId: string, lineId: number) {
+  const where = await ownLineWhere(branchCode, tableNo, deviceId, lineId);
   const [line] = await db.delete(cartLines).where(where).returning();
   if (!line) throw new AppError(404, "line_not_found", "Cart line not found");
   return { ok: true };
 }
 
 // One device's cart -> one Ticket; qty N -> N OrderItems (D6).
-export async function confirmCart(tableNo: number, deviceId: string) {
-  const table = await requireTable(tableNo);
+export async function confirmCart(branchCode: string, tableNo: number, deviceId: string) {
+  const table = await requireTable(branchCode, tableNo);
   return db.transaction(async (tx) => {
     // Locking the session serialises confirm against pay/clear (D7).
     const session = await findOpenSession(tx, table.id, true);
@@ -231,8 +244,8 @@ async function cartQty(q: Q, sessionId: number) {
   return rows;
 }
 
-export async function getTableOrders(tableNo: number, deviceId: string) {
-  const table = await requireTable(tableNo);
+export async function getTableOrders(branchCode: string, tableNo: number, deviceId: string) {
+  const table = await requireTable(branchCode, tableNo);
   const session = await findOpenSession(db, table.id);
   if (!session) return { session: null, items: [], total: 0, myCartQty: 0, otherCartQty: 0 };
   const items = await sessionItems(db, session.id);
@@ -246,15 +259,23 @@ export async function getTableOrders(tableNo: number, deviceId: string) {
   };
 }
 
+// Customers act on one table; staff on one branch. Items outside the scope behave as missing (D7).
+export type TransitionScope = { table: { branchCode: string; tableNo: number } } | { branchId: number };
+
+const branchTables = (branchId: number) => db.select({ id: tables.id }).from(tables).where(eq(tables.branchId, branchId));
+
 // Single conditional UPDATE: concurrent conflicting transitions cannot both win (D5).
-export async function transitionItem(itemId: number, action: Action, actor: Actor, tableNo?: number) {
+export async function transitionItem(itemId: number, action: Action, actor: Actor, scope: TransitionScope) {
   const a = ACTIONS[action];
   if (a.actor !== actor) throw new AppError(403, "forbidden_action", "Action not allowed");
-  const table = tableNo === undefined ? null : await requireTable(tableNo);
+  const inScope =
+    "table" in scope
+      ? eq(tableSessions.tableId, (await requireTable(scope.table.branchCode, scope.table.tableNo)).id)
+      : inArray(tableSessions.tableId, branchTables(scope.branchId));
   const openSessions = db
     .select({ id: tableSessions.id })
     .from(tableSessions)
-    .where(and(eq(tableSessions.status, "open"), table ? eq(tableSessions.tableId, table.id) : undefined));
+    .where(and(eq(tableSessions.status, "open"), inScope));
   const [row] = await db
     .update(orderItems)
     .set({ status: a.to, updatedAt: new Date() })
@@ -307,15 +328,22 @@ async function closeSession(tx: Tx, sessionId: number, status: "paid" | "voided"
   await tx.delete(cartLines).where(eq(cartLines.sessionId, sessionId));
 }
 
-async function lockSessionById(tx: Tx, sessionId: number) {
-  const [s] = await tx.select().from(tableSessions).where(eq(tableSessions.id, sessionId)).for("update");
+// A Bill from another branch behaves exactly like a missing one (D7).
+async function lockSessionById(tx: Tx, branchId: number, sessionId: number) {
+  const [row] = await tx
+    .select({ s: tableSessions })
+    .from(tableSessions)
+    .innerJoin(tables, eq(tables.id, tableSessions.tableId))
+    .where(and(eq(tableSessions.id, sessionId), eq(tables.branchId, branchId)))
+    .for("update", { of: tableSessions });
+  const s = row?.s;
   if (!s) throw new AppError(404, "bill_not_found", "Bill not found");
   if (s.status !== "open") throw new AppError(409, "bill_closed", `Bill is already ${s.status}`);
   return s;
 }
 
-export async function payByTable(tableNo: number, deviceId: string, force: boolean) {
-  const table = await requireTable(tableNo);
+export async function payByTable(branchCode: string, tableNo: number, deviceId: string, force: boolean) {
+  const table = await requireTable(branchCode, tableNo);
   return db.transaction(async (tx) => {
     const s = await findOpenSession(tx, table.id, true);
     if (!s) throw new AppError(409, "no_open_bill", "There is no open bill for this table.");
@@ -325,18 +353,18 @@ export async function payByTable(tableNo: number, deviceId: string, force: boole
   });
 }
 
-export async function markPaid(sessionId: number, force: boolean) {
+export async function markPaid(branchId: number, sessionId: number, force: boolean) {
   return db.transaction(async (tx) => {
-    const s = await lockSessionById(tx, sessionId);
+    const s = await lockSessionById(tx, branchId, sessionId);
     await assertPayable(tx, s.id, null, force);
     await closeSession(tx, s.id, "paid");
     return { billNo: s.billNo, status: "paid" as const };
   });
 }
 
-export async function clearSession(sessionId: number) {
+export async function clearSession(branchId: number, sessionId: number) {
   return db.transaction(async (tx) => {
-    const s = await lockSessionById(tx, sessionId);
+    const s = await lockSessionById(tx, branchId, sessionId);
     await closeSession(tx, s.id, "voided");
     return { billNo: s.billNo, status: "voided" as const };
   });
@@ -344,9 +372,12 @@ export async function clearSession(sessionId: number) {
 
 // ---------- console ----------
 
-export async function consoleOverview() {
-  const all = await db.select().from(tables).orderBy(asc(tables.number));
-  const open = await db.select().from(tableSessions).where(eq(tableSessions.status, "open"));
+export async function consoleOverview(branchId: number) {
+  const all = await db.select().from(tables).where(eq(tables.branchId, branchId)).orderBy(asc(tables.number));
+  const open = await db
+    .select()
+    .from(tableSessions)
+    .where(and(eq(tableSessions.status, "open"), inArray(tableSessions.tableId, branchTables(branchId))));
   return Promise.all(
     all.map(async (t) => {
       const s = open.find((o) => o.tableId === t.id);
@@ -369,7 +400,7 @@ export async function consoleOverview() {
 }
 export type ConsoleTableDto = Awaited<ReturnType<typeof consoleOverview>>[number];
 
-export async function billHistory() {
+export async function billHistory(branchId: number) {
   return db
     .select({
       id: tableSessions.id,
@@ -382,18 +413,19 @@ export async function billHistory() {
     .from(tableSessions)
     .innerJoin(tables, eq(tables.id, tableSessions.tableId))
     .leftJoin(orderItems, eq(orderItems.sessionId, tableSessions.id))
-    .where(ne(tableSessions.status, "open"))
+    .where(and(ne(tableSessions.status, "open"), eq(tables.branchId, branchId)))
     .groupBy(tableSessions.id, tables.number)
     .orderBy(desc(tableSessions.closedAt), desc(tableSessions.id));
 }
 
-export async function getBill(sessionId: number) {
+export async function getBill(branchId: number, sessionId: number) {
   const [row] = await db
-    .select({ session: tableSessions, tableNumber: tables.number })
+    .select({ session: tableSessions, tableNumber: tables.number, branchName: branches.name })
     .from(tableSessions)
     .innerJoin(tables, eq(tables.id, tableSessions.tableId))
-    .where(eq(tableSessions.id, sessionId));
+    .innerJoin(branches, eq(branches.id, tables.branchId))
+    .where(and(eq(tableSessions.id, sessionId), eq(tables.branchId, branchId)));
   if (!row) return null;
   const items = await sessionItems(db, sessionId);
-  return { ...row.session, tableNumber: row.tableNumber, items, total: billTotal(items) };
+  return { ...row.session, tableNumber: row.tableNumber, branchName: row.branchName, items, total: billTotal(items) };
 }

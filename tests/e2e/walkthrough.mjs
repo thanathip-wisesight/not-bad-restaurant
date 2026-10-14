@@ -14,19 +14,27 @@ const B = await ctxB.newPage();
 const C = await ctxC.newPage();
 C.on("dialog", (d) => d.accept());
 const step = (s) => console.log("✓", s);
+async function logIn(page, username, password) {
+  await page.getByLabel("Username").fill(username);
+  await page.getByLabel("Password").fill(password);
+  await page.getByRole("button", { name: "Log in" }).click();
+}
 const shot = (p, name) => p.screenshot({ path: `${SHOTS}${name}.png`, fullPage: false });
 const nav = (p, label) => p.locator("nav").getByRole("button", { name: new RegExp(`^${label}`) }).click();
 const within10s = { timeout: 10_000 };
 
 try {
   // Unknown table
-  await A.goto(`${BASE}/t/99`);
-  await A.getByText("Table not found").waitFor();
-  step("unknown table shows 'Table not found'");
+  for (const path of ["/t/5", "/b/SIAM/t/99", "/b/NOPE/t/1", "/b/ASOK/t/8"]) {
+    await A.goto(`${BASE}${path}`);
+    await A.getByText("Table not found").waitFor();
+  }
+  step("old /t/5, unknown table, unknown branch, ASOK table 8 all show 'Table not found'");
 
   // Menu + layouts
-  await A.goto(`${BASE}/t/5`);
+  await A.goto(`${BASE}/b/SIAM/t/5`);
   await A.getByRole("heading", { name: "Table 5" }).waitFor();
+  await A.getByText("Not Bad Siam").waitFor();
   const tabs = await A.locator("main div.sticky button").allTextContents();
   assert.deepEqual(tabs, ["Main", "A la carte", "Soup", "Special", "Dessert", "Drink"]);
   await A.getByRole("button", { name: "📖 Traditional" }).waitFor();
@@ -129,7 +137,7 @@ try {
   await shot(A, "04-cart");
 
   // Phone B: own cart
-  await B.goto(`${BASE}/t/5`);
+  await B.goto(`${BASE}/b/SIAM/t/5`);
   await nav(B, "Cart");
   await B.getByText("Your cart is empty.").waitFor();
   step("phone B has its own empty cart");
@@ -154,7 +162,16 @@ try {
   await nav(A, "Orders");
   await A.locator("main li").first().getByRole("button", { name: "Cancel" }).click();
   await A.getByText("Cancel requested", { exact: true }).first().waitFor();
+  // Staff login (console-access): wrong password first, then single-branch user lands on SIAM
   await C.goto(`${BASE}/console`);
+  await C.waitForURL(/\/login\?next=%2Fconsole$/);
+  await logIn(C, "siam.staff", "wrong-password");
+  await C.getByRole("alert").getByText("Invalid username or password").waitFor();
+  await logIn(C, "siam.staff", "siam-demo");
+  await C.waitForURL(`${BASE}/console/SIAM`);
+  await C.getByRole("heading", { name: /Restaurant console · Not Bad Siam/ }).waitFor();
+  assert.equal(await C.getByRole("link", { name: "Switch branch" }).count(), 0, "single-branch user has no branch switch");
+  step("console redirects to login; wrong password is generic; siam.staff lands on /console/SIAM");
   const board = C.getByTestId("kitchen-board");
   const strip = C.getByTestId("table-strip");
   const col = (name) => board.getByRole("region", { name, exact: true });
@@ -179,8 +196,9 @@ try {
   await C.setViewportSize({ width: 1280, height: 800 });
   await C.waitForTimeout(500);
   await shot(C, "05-board-1280x800");
-  const D = await ctxA.newPage();
-  await D.goto(`${BASE}/console`);
+  const D = await ctxC.newPage(); // same staff session, phone-sized
+  await D.setViewportSize({ width: 390, height: 844 });
+  await D.goto(`${BASE}/console/SIAM`);
   const bar = D.getByTestId("count-bar");
   await bar.getByText("1 cancel requested").waitFor();
   assert.ok(await bar.getByText("1 pending").isVisible());
@@ -227,7 +245,7 @@ try {
 
   // Mark paid + clear through the table drawer
   const P4 = await ctxA.newPage();
-  await P4.goto(`${BASE}/t/4`);
+  await P4.goto(`${BASE}/b/SIAM/t/4`);
   await P4.locator("div.rounded-lg", { hasText: "Coke" }).getByRole("button", { name: "Add" }).click();
   await P4.getByRole("button", { name: "Confirm" }).click();
   await nav(P4, "Cart");
@@ -247,7 +265,7 @@ try {
   step("drawer: mark paid blocked while unresolved, survives refresh, then paid -> closes, chip free");
 
   const P3 = await ctxB.newPage();
-  await P3.goto(`${BASE}/t/3`);
+  await P3.goto(`${BASE}/b/SIAM/t/3`);
   await P3.locator("div.rounded-lg", { hasText: "Drinking Water" }).getByRole("button", { name: "Add" }).click();
   await P3.getByRole("button", { name: "Confirm" }).click();
   await strip.getByRole("button", { name: /Table 3/ }).click(within10s);
@@ -256,7 +274,7 @@ try {
   step("drawer: clear table (with confirm prompt)");
 
   // History + receipt
-  await C.goto(`${BASE}/console/history`);
+  await C.goto(`${BASE}/console/SIAM/history`);
   await C.locator("table").waitFor(); // Suspense content streams in hidden first
   const rows = await C.locator("tbody tr").allTextContents();
   assert.equal(rows.length, 3);
@@ -269,6 +287,7 @@ try {
   await C.getByText("RECEIPT", { exact: true }).waitFor();
   const receipt = await C.locator("main.font-mono").innerText();
   assert.match(receipt, /Table: 5/);
+  assert.match(receipt, /Not Bad Siam/, "receipt shows the branch name");
   assert.match(receipt, /\+ Extra egg/);
   assert.match(receipt, /TOTAL\s*฿90/);
   assert.match(receipt, /PAID/);
@@ -279,6 +298,66 @@ try {
   const norm = (t) => t.replace(/\s+/g, "");
   assert.equal(norm(await C.locator("main.font-mono").textContent()), norm(receipt));
   step("history newest first; receipt content correct and identical on reprint");
+
+  // Multi-branch user, ASOK isolation, switching, 403, logout
+  const ctxE = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const E = await ctxE.newPage();
+  await E.goto(`${BASE}/console/SIAM/history`);
+  await E.waitForURL(/\/login\?next=%2Fconsole%2FSIAM%2Fhistory$/);
+  await logIn(E, "area.manager", "manager-demo");
+  await E.waitForURL(`${BASE}/console/SIAM/history`);
+  step("login returns to the requested page (/console/SIAM/history)");
+
+  await E.goto(`${BASE}/console`);
+  await E.getByRole("heading", { name: "Choose a branch" }).waitFor();
+  assert.deepEqual(
+    (await E.locator("main li a").allTextContents()).map((t) => t.replace(/\s+/g, " ").trim()),
+    ["Not Bad Asok ASOK", "Not Bad Siam SIAM"],
+  );
+  await E.getByRole("link", { name: /Not Bad Asok/ }).click();
+  await E.waitForURL(`${BASE}/console/ASOK`);
+  const asokStrip = E.getByTestId("table-strip");
+  await asokStrip.waitFor();
+  assert.equal(await asokStrip.locator(":scope > *").count(), 6, "ASOK has 6 tables");
+  step("area.manager gets the branch picker; ASOK console shows ASOK's 6 tables");
+
+  const P5 = await ctxA.newPage();
+  await P5.goto(`${BASE}/b/ASOK/t/5`);
+  await P5.getByText("Not Bad Asok").waitFor();
+  await P5.locator("div.rounded-lg", { hasText: "Coke" }).getByRole("button", { name: "Add" }).click();
+  await P5.getByRole("button", { name: "Confirm" }).click();
+  await nav(P5, "Cart");
+  await P5.getByRole("button", { name: "Confirm order" }).click();
+  await nav(P5, "Orders");
+  assert.match(await P5.locator("main").innerText(), /ASOK-T05-\d{4}/);
+  await E.getByTestId("kitchen-board").locator("li", { hasText: "Table 5" }).waitFor(within10s);
+  await C.goto(`${BASE}/console/SIAM`);
+  await C.getByTestId("table-strip").waitFor();
+  await C.waitForTimeout(6000);
+  assert.match(await C.getByTestId("table-strip").locator(":scope > span", { hasText: "Table 5" }).innerText(), /Free/);
+  assert.equal(await C.getByTestId("kitchen-board").locator("li", { hasText: "Coke" }).count(), 0);
+  step("ASOK table 5 order: Bill ASOK-T05-…, on the ASOK board, not on the SIAM console");
+
+  await E.getByRole("link", { name: "Switch branch" }).click();
+  await E.getByRole("link", { name: /Not Bad Siam/ }).click();
+  await E.waitForURL(`${BASE}/console/SIAM`);
+  step("Switch branch -> picker -> SIAM");
+
+  await C.goto(`${BASE}/console/ASOK`);
+  await C.getByRole("heading", { name: "No access to this branch" }).waitFor();
+  const apiStatus = await C.evaluate(() => fetch("/api/console/ASOK/tables").then((r) => r.status));
+  assert.equal(apiStatus, 403);
+  await shot(C, "10-no-access");
+  step("siam.staff on ASOK: no-access page and 403 from the API");
+
+  await C.goto(`${BASE}/console/SIAM`);
+  await C.getByRole("button", { name: "Log out" }).click();
+  await C.waitForURL(`${BASE}/login`);
+  await C.goto(`${BASE}/console/SIAM`);
+  await C.waitForURL(/\/login\?next=/);
+  assert.equal(await C.evaluate(() => fetch("/api/console/SIAM/tables").then((r) => r.status)), 401);
+  step("logout ends the session: console redirects to login, API returns 401");
+  await ctxE.close();
 
   console.log("\nWALKTHROUGH PASSED");
 } catch (e) {

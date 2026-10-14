@@ -6,6 +6,7 @@ import { BOARD_COLUMNS, boardColumns, formatElapsed, type BoardCard, type BoardS
 import { RESOLVED, STATUS_LABELS } from "@/lib/domain";
 import { baht } from "@/lib/client";
 import type { ConsoleTableDto } from "@/lib/service";
+import { LogoutButton } from "./logout-button";
 import {
   ItemActions,
   OptionsAndNote,
@@ -17,8 +18,18 @@ import {
 } from "./console-parts";
 
 // Kitchen board at md (>= 768 px), per-table cards below it; switched in CSS (design D2).
-export function ConsoleBoard() {
-  const { tables, now, error, handlers } = useConsoleData();
+export function ConsoleBoard({
+  branchCode,
+  branchName,
+  staffName,
+  canSwitch,
+}: {
+  branchCode: string;
+  branchName: string;
+  staffName: string;
+  canSwitch: boolean;
+}) {
+  const { tables, now, error, handlers } = useConsoleData(branchCode);
   const [drawerSession, setDrawerSession] = useState<number | null>(null);
   const open = tables?.filter(isOpen) ?? [];
   const cols = boardColumns(open);
@@ -27,11 +38,22 @@ export function ConsoleBoard() {
 
   return (
     <main className="mx-auto max-w-6xl p-4 md:flex md:h-dvh md:max-w-none md:flex-col">
-      <header className="flex items-center justify-between">
-        <h1 className="text-xl font-bold">Restaurant console</h1>
-        <Link href="/console/history" className="text-sm underline">
-          Bill history
-        </Link>
+      <header className="flex flex-wrap items-center justify-between gap-2">
+        <h1 className="text-xl font-bold">
+          Restaurant console <span className="font-normal text-stone-500">· {branchName}</span>
+        </h1>
+        <nav className="flex items-center gap-4 text-sm">
+          <span className="text-stone-500">{staffName}</span>
+          {canSwitch && (
+            <Link href="/console?choose=1" className="underline">
+              Switch branch
+            </Link>
+          )}
+          <Link href={`/console/${branchCode}/history`} className="underline">
+            Bill history
+          </Link>
+          <LogoutButton />
+        </nav>
       </header>
       {error && (
         <p role="alert" className="mt-3 rounded bg-red-50 p-3 text-sm text-red-900">

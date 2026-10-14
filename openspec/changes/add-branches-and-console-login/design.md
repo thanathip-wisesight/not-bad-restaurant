@@ -45,7 +45,9 @@ Putting the branch in the URL makes the selection explicit, bookmarkable, and ch
 Console service functions take the resolved `branchId`: overview/history filter by it; `transitionItem`, `markPaid`, `clearSession`, and `getBill` add `tables.branch_id = $branchId` to their lookups, so an id from another branch behaves exactly like a missing id (404) and nothing changes.
 
 ### D8. Seed
-Seed creates SIAM (10 tables), ASOK (6 tables), the shared menu, and users `siam.staff` / `area.manager` with demo passwords hashed at seed time; passwords are printed in the README only. The existing `--force` guard is kept.
+Seed creates SIAM (10 tables), ASOK (6 tables), the shared menu, and users `siam.staff` / `area.manager` with demo passwords hashed at seed time; passwords are printed in the README only. The existing `--force` guard is kept for a full re-seed.
+
+`--users-only` is non-destructive: in one transaction it upserts branches by code (inserting missing ASOK tables, never renumbering or deleting existing ones), upserts users by username (resetting their password hash to the demo value), and inserts missing `user_branches` rows. It never truncates and never touches menu, sessions, carts, orders, or Bills, so an existing database keeps its history. It runs without `--force` and can be repeated safely.
 
 ### D9. Tests
 - Unit: hash/verify round-trip and rejection; session expiry/extension rule.
@@ -62,9 +64,5 @@ Seed creates SIAM (10 tables), ASOK (6 tables), the shared menu, and users `siam
 ## Migration Plan
 
 1. `npm run db:generate` then hand-edit the migration for the SIAM backfill (D2); `npm run db:migrate`.
-2. Re-seed only on fresh databases; existing deployments keep their data under SIAM, and staff users are added by re-running the seed with `--force` only where data loss is acceptable. (Open question below.)
+2. Fresh database: `npm run db:seed`. Existing database with history: `npm run db:seed -- --users-only` to add ASOK and the staff accounts without touching bills (D8).
 3. Rollback: redeploy the previous build and restore the database backup; the schema change is not backward-compatible.
-
-## Open Questions
-
-- Should the seed gain a non-destructive mode that only upserts branches and users, so an existing database keeps its bill history while getting staff accounts? It does not change any spec; it decides whether task 2.3 also adds a `--users-only` flag.
