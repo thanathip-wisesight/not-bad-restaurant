@@ -43,7 +43,7 @@ The Modern layout SHALL present items in a vertically scrolling two-column grid,
 - **THEN** the view scrolls to the first Dessert item
 
 ### Requirement: Traditional-like layout
-The Traditional-like layout SHALL present items on horizontally paged pages of 4 columns by 2 rows. Each category SHALL start on a new page; unused slots on a category's last page SHALL stay empty. Selecting a category tab SHALL show that category's first page.
+The Traditional-like layout SHALL show one page at a time filling the landscape screen, each page 4 columns by 2 rows with no vertical scrolling. Each category SHALL start on a new page; unused slots on a category's last page SHALL stay empty. Pages SHALL turn by horizontal swipe or previous/next controls, with a page indicator. Selecting a category tab SHALL show that category's first page.
 
 #### Scenario: Category starting a new page
 - **WHEN** the Soup category has 10 items in Traditional-like layout
@@ -53,6 +53,36 @@ The Traditional-like layout SHALL present items on horizontally paged pages of 4
 - **WHEN** a customer taps the "Drink" tab
 - **THEN** the first page of Drink items is shown
 
+#### Scenario: Turning pages
+- **WHEN** a customer on page 1 taps the next-page control
+- **THEN** page 2 is shown and the indicator reads "2/N"
+
+### Requirement: Traditional-like layout is landscape-only
+Traditional-like SHALL render only while the screen is in landscape orientation. While Traditional-like is the chosen layout and the screen is portrait, the system SHALL show the Modern layout with a hint to turn the phone sideways, and SHALL show Traditional-like again when the screen turns to landscape, without changing the stored choice. The system SHALL NOT request fullscreen or lock screen orientation.
+
+#### Scenario: Phone held upright
+- **WHEN** the chosen layout is Traditional-like and the phone is in portrait
+- **THEN** the Modern layout is shown with a "turn your phone sideways" hint
+
+#### Scenario: Phone turned sideways
+- **WHEN** the same phone is rotated to landscape
+- **THEN** the Traditional-like layout is shown
+
+#### Scenario: Modern ignores orientation
+- **WHEN** the chosen layout is Modern and the phone is in landscape
+- **THEN** the Modern layout is shown
+
+### Requirement: Compact landscape controls
+While Traditional-like is shown, the system SHALL replace the header and bottom tab bar with one compact top bar holding the table number, the six category tabs, Cart and Orders controls with counts, and a control to switch to Modern. Cart, Orders, and item options SHALL open as overlays above the menu page, scrolling internally when taller than the screen; closing one SHALL return to the same menu page.
+
+#### Scenario: Cart overlay keeps the page
+- **WHEN** a customer on Soup page 2 opens Cart and closes it
+- **THEN** Soup page 2 is shown
+
+#### Scenario: Options taller than the screen
+- **WHEN** an item's options do not fit the landscape screen height
+- **THEN** the options overlay scrolls internally and Confirm stays reachable
+
 ### Requirement: Layout selection
 The system SHALL default to the Modern layout and SHALL let the customer switch layouts. The choice SHALL persist on the same device across page reloads.
 
@@ -61,5 +91,5 @@ The system SHALL default to the Modern layout and SHALL let the customer switch 
 - **THEN** the Modern layout is shown
 
 #### Scenario: Choice remembered
-- **WHEN** a customer switches to Traditional-like and reloads the page
+- **WHEN** a customer switches to Traditional-like and reloads the page in landscape
 - **THEN** the Traditional-like layout is shown

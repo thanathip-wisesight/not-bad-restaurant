@@ -8,7 +8,7 @@ const browser = await chromium.launch({ channel: "chrome", headless: true });
 const phone = { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true };
 const ctxA = await browser.newContext(phone);
 const ctxB = await browser.newContext(phone);
-const ctxC = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+const ctxC = await browser.newContext({ viewport: { width: 1280, height: 800 } });
 const A = await ctxA.newPage();
 const B = await ctxB.newPage();
 const C = await ctxC.newPage();
@@ -106,28 +106,59 @@ try {
   await B.getByText("Coke").waitFor();
   step("phone B sees A's items; B's cart kept");
 
-  // Cancel request flow
+  // Cancel request flow, driven through the kitchen board (console-desktop-layout)
   await nav(A, "Orders");
   await A.locator("main li").first().getByRole("button", { name: "Cancel" }).click();
   await A.getByText("Cancel requested", { exact: true }).first().waitFor();
   await C.goto(`${BASE}/console`);
-  const t5 = C.locator("section", { has: C.getByRole("heading", { name: "Table 5" }) });
-  const req = t5.locator("li.bg-amber-100");
+  const board = C.getByTestId("kitchen-board");
+  const strip = C.getByTestId("table-strip");
+  const col = (name) => board.getByRole("region", { name, exact: true });
+  const req = col("Cancel requested").locator("li", { hasText: "Table 5" });
   await req.waitFor(within10s);
   assert.equal(await req.getByRole("button", { name: "Start" }).count(), 0, "start not offered on cancel_requested");
-  await shot(C, "05-console-cancel-request");
+  assert.match(await col("Cancel requested").locator("h2").getAttribute("class"), /bg-amber-300/);
+  assert.equal(await col("Cancel requested").getByTestId("column-count").innerText(), "1");
+  assert.match(await req.getByTestId("elapsed").innerText(), /^\d+ min$/);
+  assert.match(await req.innerText(), /Extra egg[\s\S]*no beansprout!/);
+  assert.match(await strip.getByRole("button", { name: /Table 5/ }).innerText(), /T05-\d{4} · ฿0 · 2 open/);
+  assert.match(await strip.locator(":scope > span", { hasText: "Table 3" }).innerText(), /Free/);
+  step("board: cancel request column highlighted with count, card content, strip chips");
+
+  for (const [w, h] of [[768, 1024], [1920, 1080]]) {
+    await C.setViewportSize({ width: w, height: h });
+    assert.ok(await board.isVisible(), `board visible at ${w}`);
+    assert.equal(await C.locator("main").count(), 1, `one console main at ${w}`);
+    await C.waitForTimeout(500); // let the compositor repaint after resize, or the shot shows stale tiles
+    await shot(C, `05-board-${w}x${h}`);
+  }
+  await C.setViewportSize({ width: 1280, height: 800 });
+  await C.waitForTimeout(500);
+  await shot(C, "05-board-1280x800");
+  const D = await ctxA.newPage();
+  await D.goto(`${BASE}/console`);
+  const bar = D.getByTestId("count-bar");
+  await bar.getByText("1 cancel requested").waitFor();
+  assert.ok(await bar.getByText("1 pending").isVisible());
+  assert.equal(await D.getByTestId("kitchen-board").isVisible(), false, "no board on phone");
+  await shot(D, "05-phone-console");
+  await D.close();
+  step("board at 768/1280/1920 px; phone shows card list with count bar");
+
   await req.getByRole("button", { name: "Reject cancel" }).click();
-  await t5.locator("li").first().getByRole("button", { name: "Start" }).click();
-  await t5.locator("li").first().getByRole("button", { name: "Serve" }).click();
-  await t5.locator("li").first().getByText("Served").waitFor();
-  step("console: cancel request highlighted, reject -> pending, start, serve");
+  await col("Pending").locator("li", { hasText: "Table 5" }).nth(1).waitFor();
+  await col("Pending").locator("li").first().getByRole("button", { name: "Start" }).click();
+  await col("In progress").locator("li", { hasText: "Table 5" }).getByRole("button", { name: "Serve" }).click();
+  await col("Served").locator("li", { hasText: "Table 5" }).waitFor();
+  step("board: reject -> pending, start moves to In progress, serve moves to Served");
 
   await A.locator("main li").filter({ hasText: "Served" }).first().waitFor(within10s);
   step("customer sees Served within 10 s");
-  await A.locator("main li").nth(1).getByRole("button", { name: "Cancel" }).click();
-  await t5.locator("li.bg-amber-100").getByRole("button", { name: "Confirm cancel" }).click(within10s);
-  await A.locator("main li").nth(1).getByText("Cancelled").waitFor(within10s);
-  step("cancel request -> staff confirm -> Cancelled");
+  await A.locator("main li").filter({ hasText: "Pending" }).getByRole("button", { name: "Cancel" }).click();
+  await col("Cancel requested").locator("li", { hasText: "Table 5" }).getByRole("button", { name: "Confirm cancel" }).click(within10s);
+  await A.locator("main li").filter({ hasText: "Cancelled" }).waitFor(within10s);
+  assert.equal(await board.locator("li", { hasText: "Table 5" }).count(), 1, "cancelled dish leaves the board");
+  step("cancel request -> staff confirm -> Cancelled, gone from board");
 
   // Pay with warning about B's unsent cart
   await A.getByRole("button", { name: "Pay", exact: true }).click();
@@ -142,44 +173,53 @@ try {
   await A.getByText("Payment successful. Thank you!").waitFor();
   step("pay: warning -> Back keeps state; Pay anyway -> stub bank -> success banner");
 
+  const freeChip = (n) => strip.locator(":scope > span", { hasText: new RegExp(`Table ${n}\\s*Free`) });
   await nav(B, "Orders");
   await B.getByText("No orders yet.").waitFor(within10s);
   await nav(B, "Cart");
   await B.getByText("Your cart is empty.").waitFor(within10s);
-  await t5.getByText("Free").waitFor(within10s);
-  step("session closed: B sees no orders, B's unsent cart discarded, console shows Free");
+  await freeChip(5).waitFor(within10s);
+  step("session closed: B sees no orders, B's unsent cart discarded, strip shows table 5 free");
 
-  // Mark paid + clear on other tables
+  // Mark paid + clear through the table drawer
   const P4 = await ctxA.newPage();
   await P4.goto(`${BASE}/t/4`);
   await P4.locator("div.rounded-lg", { hasText: "Coke" }).getByRole("button", { name: "Add" }).click();
   await P4.getByRole("button", { name: "Confirm" }).click();
   await nav(P4, "Cart");
   await P4.getByRole("button", { name: "Confirm order" }).click();
-  const t4 = C.locator("section", { has: C.getByRole("heading", { name: "Table 4" }) });
-  await t4.getByRole("button", { name: "Mark paid" }).click(within10s);
+  await strip.getByRole("button", { name: /Table 4/ }).click(within10s);
+  const drawer4 = C.getByRole("dialog", { name: "Table 4 bill" });
+  await drawer4.getByRole("button", { name: "Mark paid" }).click();
   await C.getByRole("alert").getByText(/Cannot mark paid/).waitFor();
-  await t4.getByRole("button", { name: "Start" }).click();
-  await t4.getByRole("button", { name: "Serve" }).click();
-  await t4.getByRole("button", { name: "Mark paid" }).click();
-  await t4.getByText("Free").waitFor();
-  step("console mark paid: blocked while unresolved, then paid");
+  await C.waitForTimeout(6000);
+  assert.ok(await drawer4.isVisible(), "drawer stays open across a refresh");
+  await shot(C, "06-drawer");
+  await drawer4.getByRole("button", { name: "Start" }).click();
+  await drawer4.getByRole("button", { name: "Serve" }).click();
+  await drawer4.getByRole("button", { name: "Mark paid" }).click();
+  await drawer4.waitFor({ state: "detached" });
+  await freeChip(4).waitFor();
+  step("drawer: mark paid blocked while unresolved, survives refresh, then paid -> closes, chip free");
 
   const P3 = await ctxB.newPage();
   await P3.goto(`${BASE}/t/3`);
   await P3.locator("div.rounded-lg", { hasText: "Drinking Water" }).getByRole("button", { name: "Add" }).click();
   await P3.getByRole("button", { name: "Confirm" }).click();
-  const t3 = C.locator("section", { has: C.getByRole("heading", { name: "Table 3" }) });
-  await t3.getByRole("button", { name: "Clear table" }).click(within10s);
-  await t3.getByText("Free").waitFor();
-  step("console clear table (with confirm prompt)");
+  await strip.getByRole("button", { name: /Table 3/ }).click(within10s);
+  await C.getByRole("dialog", { name: "Table 3 bill" }).getByRole("button", { name: "Clear table" }).click();
+  await freeChip(3).waitFor();
+  step("drawer: clear table (with confirm prompt)");
 
   // History + receipt
   await C.goto(`${BASE}/console/history`);
+  await C.locator("table").waitFor(); // Suspense content streams in hidden first
   const rows = await C.locator("tbody tr").allTextContents();
   assert.equal(rows.length, 3);
   assert.match(rows[0], /T03-.*voided/);
   assert.match(rows[2], /T05-.*฿90.*paid/);
+  await C.setViewportSize({ width: 1920, height: 1080 });
+  assert.ok((await C.locator("table").boundingBox()).width > 1600, "history uses full width at 1920");
   await shot(C, "08-history");
   await C.locator("tbody tr").nth(2).getByRole("link", { name: "Open / print" }).click();
   await C.getByText("RECEIPT", { exact: true }).waitFor();
@@ -189,6 +229,7 @@ try {
   assert.match(receipt, /TOTAL\s*฿90/);
   assert.match(receipt, /PAID/);
   assert.match(receipt, /not a tax invoice/);
+  assert.ok((await C.locator("main.font-mono").boundingBox()).width <= 320, "receipt keeps receipt width");
   await shot(C, "09-receipt");
   await C.reload();
   const norm = (t) => t.replace(/\s+/g, "");

@@ -6,7 +6,7 @@ Restaurant QR-ordering web apps are often painful to use, and orders get lost or
 
 ## What Changes
 
-- Mobile web menu opened by scanning a per-table QR code (`/t/{tableNo}`), with two layouts: Modern (default, vertical 2-column) and Traditional (horizontal 4×2 pages), both with six category tabs.
+- Mobile web menu opened by scanning a per-table QR code (`/t/{tableNo}`), with two layouts: Modern (default, vertical 2-column, any orientation) and Traditional (landscape-only, one 4×2 page per screen; held upright it shows Modern), both with six category tabs.
 - Per-device cart: add, edit (options, note, quantity), remove, confirm. Confirming sends that device's cart to the kitchen as a Ticket; a line with quantity N becomes N separate OrderItems.
 - Table-wide order tracking: every device at the table sees all confirmed OrderItems and their status (`pending`, `cancel_requested`, `in_progress`, `served`, `cancelled`), refreshed by polling.
 - Customer cancel request on `pending` items, which blocks cooking until staff confirms or rejects it.

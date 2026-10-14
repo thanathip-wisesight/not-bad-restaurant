@@ -8,7 +8,7 @@ export const metadata = { title: "Bill history · Not Bad Restaurant" };
 
 export default function HistoryPage() {
   return (
-    <main className="mx-auto max-w-3xl p-4">
+    <main className="mx-auto max-w-3xl p-4 xl:max-w-none xl:px-8">
       <header className="flex items-center justify-between">
         <h1 className="text-xl font-bold">Bill history</h1>
         <Link href="/console" className="text-sm underline">

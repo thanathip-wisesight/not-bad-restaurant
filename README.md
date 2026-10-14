@@ -27,8 +27,15 @@ To try on a phone on the same Wi-Fi, open `http://<your-LAN-IP>:3000/t/5`.
 
 ```bash
 npm test   # Vitest; migrates and uses TEST_DATABASE_URL, never DATABASE_URL
-npm run db:seed -- --force && npm run e2e -- http://localhost:3000
-           # browser walkthrough: two phones + console (needs Google Chrome; expects a freshly seeded DB)
+```
+
+Browser walkthrough (two phones + console, needs Google Chrome). It wipes its database, so it uses `restaurant_e2e`, never the dev DB:
+
+```bash
+export DATABASE_URL=postgres://app:app@localhost:5432/restaurant_e2e   # created by docker-compose init
+npm run db:migrate && npm run db:seed -- --force && npm run build
+npx next start -p 3100 &        # separate from any `npm run dev`
+npm run e2e -- http://localhost:3100   # screenshots land in tests/e2e/shots/
 ```
 
 ## Deploy (Vercel + Neon)

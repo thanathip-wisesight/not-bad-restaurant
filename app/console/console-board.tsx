@@ -1,64 +1,32 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
-import { STATUS_STYLE } from "@/components/table-app";
-import { ACTIONS, STATUS_LABELS, actionsFor, type Action } from "@/lib/domain";
-import { ApiError, api, baht, usePolling } from "@/lib/client";
+import { useEffect, useState } from "react";
+import { BOARD_COLUMNS, boardColumns, formatElapsed, type BoardCard, type BoardStatus } from "@/lib/console";
+import { RESOLVED, STATUS_LABELS } from "@/lib/domain";
+import { baht } from "@/lib/client";
 import type { ConsoleTableDto } from "@/lib/service";
+import {
+  ItemActions,
+  OptionsAndNote,
+  TableDetail,
+  isOpen,
+  useConsoleData,
+  type ConsoleHandlers,
+  type OpenTable,
+} from "./console-parts";
 
+// Kitchen board at md (>= 768 px), per-table cards below it; switched in CSS (design D2).
 export function ConsoleBoard() {
-  const [tables, setTables] = useState<ConsoleTableDto[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  const refresh = async () => {
-    try {
-      setTables(await api<ConsoleTableDto[]>("/api/console/tables"));
-    } catch {
-      // next poll retries
-    }
-  };
-  usePolling(refresh);
-
-  const run = async (fn: () => Promise<unknown>) => {
-    setError(null);
-    try {
-      await fn();
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Something went wrong");
-    }
-    await refresh();
-  };
-
-  const act = (itemId: number, action: Action) => run(() => api(`/api/console/items/${itemId}`, "POST", { action }));
-
-  const markPaid = (sessionId: number) =>
-    run(async () => {
-      try {
-        await api(`/api/console/sessions/${sessionId}/pay`, "POST", { force: false });
-      } catch (e) {
-        if (e instanceof ApiError && e.body.error === "unsent_carts") {
-          if (window.confirm(`${e.message}\n\nPay anyway?`))
-            await api(`/api/console/sessions/${sessionId}/pay`, "POST", { force: true });
-          return;
-        }
-        if (e instanceof ApiError && e.body.error === "unresolved_items") {
-          const items = (e.body.items as { name: string; status: keyof typeof STATUS_LABELS }[]) ?? [];
-          throw new ApiError(409, {
-            message: `Cannot mark paid. Unresolved: ${items.map((i) => `${i.name} (${STATUS_LABELS[i.status]})`).join(", ")}`,
-          });
-        }
-        throw e;
-      }
-    });
-
-  const clear = (sessionId: number, tableNumber: number) => {
-    if (window.confirm(`Clear table ${tableNumber}? An unpaid bill will be recorded as voided.`))
-      run(() => api(`/api/console/sessions/${sessionId}/clear`, "POST"));
-  };
+  const { tables, now, error, handlers } = useConsoleData();
+  const [drawerSession, setDrawerSession] = useState<number | null>(null);
+  const open = tables?.filter(isOpen) ?? [];
+  const cols = boardColumns(open);
+  // Keyed by session, so the drawer disappears once that bill closes (design D5).
+  const drawerTable = open.find((t) => t.session.id === drawerSession);
 
   return (
-    <main className="mx-auto max-w-6xl p-4">
+    <main className="mx-auto max-w-6xl p-4 md:flex md:h-dvh md:max-w-none md:flex-col">
       <header className="flex items-center justify-between">
         <h1 className="text-xl font-bold">Restaurant console</h1>
         <Link href="/console/history" className="text-sm underline">
@@ -71,66 +39,147 @@ export function ConsoleBoard() {
         </p>
       )}
       {!tables && <p className="mt-6 text-stone-500">Loading…</p>}
-      <div className="mt-4 grid items-start gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {tables?.map((t) => (
-          <section key={t.tableNumber} className="rounded-lg border bg-white p-3">
-            <div className="flex items-baseline justify-between">
-              <h2 className="text-lg font-bold">Table {t.tableNumber}</h2>
-              {t.session ? (
-                <span className="font-mono text-sm">{t.session.billNo}</span>
-              ) : (
-                <span className="text-sm text-emerald-700">Free</span>
-              )}
-            </div>
-            {t.session && (
-              <>
-                {t.session.unsentCartQty > 0 && (
-                  <p className="text-xs text-stone-500">{t.session.unsentCartQty} dish(es) in customer carts (not sent)</p>
-                )}
-                <ul className="mt-2 divide-y">
-                  {t.session.items.map((i) => (
-                    <li key={i.id} className={`py-2 ${i.status === "cancel_requested" ? "-mx-3 bg-amber-100 px-3" : ""}`}>
-                      <div className="flex justify-between gap-2 text-sm">
-                        <span className="font-medium">{i.name}</span>
-                        <span>{baht(i.unitPrice)}</span>
-                      </div>
-                      {i.options.length > 0 && <p className="text-xs text-stone-600">{i.options.map((o) => o.name).join(", ")}</p>}
-                      {i.note && <p className="text-xs italic text-stone-600">“{i.note}”</p>}
-                      <div className="mt-1 flex flex-wrap items-center gap-1">
-                        <span className={`rounded px-2 py-0.5 text-xs ${STATUS_STYLE[i.status]}`}>{STATUS_LABELS[i.status]}</span>
-                        {actionsFor(i.status, "staff").map((a) => (
-                          <button key={a} onClick={() => act(i.id, a)} className="rounded border px-2 py-0.5 text-xs hover:bg-stone-100">
-                            {ACTIONS[a].label}
-                          </button>
-                        ))}
-                      </div>
-                    </li>
-                  ))}
-                  {!t.session.items.length && <li className="py-2 text-sm text-stone-500">No confirmed orders yet.</li>}
-                </ul>
-                <p className="mt-2 flex justify-between text-sm font-semibold">
-                  <span>Total (served)</span>
-                  <span>{baht(t.session.total)}</span>
-                </p>
-                <div className="mt-3 grid grid-cols-3 gap-2 text-sm">
-                  <button onClick={() => markPaid(t.session!.id)} className="rounded bg-emerald-600 py-1.5 text-white">
-                    Mark paid
-                  </button>
-                  <button
-                    onClick={() => window.open(`/console/bills/${t.session!.id}/print?print=1`, "_blank")}
-                    className="rounded border py-1.5"
-                  >
-                    Print bill
-                  </button>
-                  <button onClick={() => clear(t.session!.id, t.tableNumber)} className="rounded border border-red-300 py-1.5 text-red-700">
-                    Clear table
-                  </button>
-                </div>
-              </>
-            )}
-          </section>
-        ))}
-      </div>
+      {tables && (
+        <>
+          <div className="md:hidden" data-testid="phone-console">
+            <CountBar cols={cols} />
+            <PhoneList tables={tables} handlers={handlers} />
+          </div>
+          <div className="hidden min-h-0 flex-1 flex-col md:flex" data-testid="board-console">
+            <TableStrip tables={tables} selected={drawerSession} onSelect={setDrawerSession} />
+            <Board cols={cols} now={now} handlers={handlers} />
+          </div>
+          {drawerTable && <TableDrawer table={drawerTable} handlers={handlers} onClose={() => setDrawerSession(null)} />}
+        </>
+      )}
     </main>
+  );
+}
+
+const headerStyle = (s: BoardStatus, count: number) =>
+  s === "cancel_requested" && count > 0 ? "bg-amber-300 text-amber-950" : "bg-stone-200 text-stone-800";
+
+function Board({ cols, now, handlers }: { cols: Record<BoardStatus, BoardCard[]>; now: number; handlers: ConsoleHandlers }) {
+  return (
+    <div className="mt-3 grid min-h-0 flex-1 grid-cols-4 gap-3" data-testid="kitchen-board">
+      {BOARD_COLUMNS.map((s) => (
+        <section key={s} aria-label={STATUS_LABELS[s]} className="flex min-h-0 flex-col rounded-lg border bg-stone-100">
+          <h2 className={`flex items-center justify-between rounded-t-lg px-3 py-2 text-sm font-semibold ${headerStyle(s, cols[s].length)}`}>
+            <span>{STATUS_LABELS[s]}</span>
+            <span data-testid="column-count" className="rounded-full bg-white/70 px-2">
+              {cols[s].length}
+            </span>
+          </h2>
+          <ul className="flex-1 space-y-2 overflow-y-auto p-2">
+            {cols[s].map((c) => (
+              <li key={c.id} className="rounded-md border bg-white p-2 shadow-sm">
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="text-lg font-bold">Table {c.tableNumber}</span>
+                  <span className="text-xs text-stone-500" data-testid="elapsed">
+                    {formatElapsed(c.updatedAt, now)}
+                  </span>
+                </div>
+                <p className="text-sm font-medium leading-tight">{c.name}</p>
+                <OptionsAndNote item={c} />
+                <div className="mt-1 flex flex-wrap gap-1">
+                  <ItemActions item={c} act={handlers.act} />
+                </div>
+              </li>
+            ))}
+            {!cols[s].length && <li className="p-2 text-xs text-stone-400">Nothing here</li>}
+          </ul>
+        </section>
+      ))}
+    </div>
+  );
+}
+
+function TableStrip({
+  tables,
+  selected,
+  onSelect,
+}: {
+  tables: ConsoleTableDto[];
+  selected: number | null;
+  onSelect: (sessionId: number) => void;
+}) {
+  return (
+    <div className="mt-3 flex flex-wrap gap-2" data-testid="table-strip">
+      {tables.map((t) =>
+        isOpen(t) ? (
+          <button
+            key={t.tableNumber}
+            onClick={() => onSelect(t.session.id)}
+            className={`rounded-lg border px-3 py-1.5 text-left text-xs ${t.session.items.some((i) => i.status === "cancel_requested") ? "border-amber-400 bg-amber-50" : "bg-white"} ${selected === t.session.id ? "ring-2 ring-orange-500" : ""}`}
+          >
+            <span className="block text-sm font-bold">Table {t.tableNumber}</span>
+            <span className="font-mono">{t.session.billNo}</span> · {baht(t.session.total)} ·{" "}
+            {t.session.items.filter((i) => !RESOLVED.includes(i.status)).length} open
+          </button>
+        ) : (
+          <span key={t.tableNumber} className="rounded-lg bg-stone-200 px-3 py-1.5 text-xs text-stone-500">
+            <span className="block text-sm font-bold">Table {t.tableNumber}</span>
+            Free
+          </span>
+        ),
+      )}
+    </div>
+  );
+}
+
+function TableDrawer({ table, handlers, onClose }: { table: OpenTable; handlers: ConsoleHandlers; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-30 bg-black/30" onClick={onClose}>
+      <aside
+        role="dialog"
+        aria-label={`Table ${table.tableNumber} bill`}
+        className="absolute inset-y-0 right-0 w-full max-w-md overflow-y-auto bg-white p-4 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-baseline justify-between gap-2">
+          <h2 className="text-lg font-bold">Table {table.tableNumber}</h2>
+          <span className="font-mono text-sm">{table.session.billNo}</span>
+          <button onClick={onClose} aria-label="Close" className="text-lg">
+            ✕
+          </button>
+        </div>
+        <TableDetail table={table} handlers={handlers} />
+      </aside>
+    </div>
+  );
+}
+
+function CountBar({ cols }: { cols: Record<BoardStatus, BoardCard[]> }) {
+  const pending = cols.cancel_requested.length;
+  return (
+    <div className="mt-3 flex gap-2 text-xs" data-testid="count-bar">
+      <span className={`rounded-full px-3 py-1 ${pending ? "bg-amber-300 font-semibold text-amber-950" : "bg-stone-200"}`}>
+        {pending} cancel requested
+      </span>
+      <span className="rounded-full bg-stone-200 px-3 py-1">{cols.pending.length} pending</span>
+      <span className="rounded-full bg-stone-200 px-3 py-1">{cols.in_progress.length} in progress</span>
+    </div>
+  );
+}
+
+function PhoneList({ tables, handlers }: { tables: ConsoleTableDto[]; handlers: ConsoleHandlers }) {
+  return (
+    <div className="mt-4 grid items-start gap-4 sm:grid-cols-2">
+      {tables.map((t) => (
+        <section key={t.tableNumber} className="rounded-lg border bg-white p-3">
+          <div className="flex items-baseline justify-between">
+            <h2 className="text-lg font-bold">Table {t.tableNumber}</h2>
+            {t.session ? <span className="font-mono text-sm">{t.session.billNo}</span> : <span className="text-sm text-emerald-700">Free</span>}
+          </div>
+          {isOpen(t) && <TableDetail table={t} handlers={handlers} />}
+        </section>
+      ))}
+    </div>
   );
 }

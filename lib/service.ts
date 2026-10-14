@@ -217,6 +217,7 @@ async function sessionItems(q: Q, sessionId: number) {
     note: r.note,
     unitPrice: r.unitPrice,
     status: r.status as ItemStatus,
+    updatedAt: r.updatedAt.toISOString(),
   }));
 }
 export type OrderItemDto = Awaited<ReturnType<typeof sessionItems>>[number];

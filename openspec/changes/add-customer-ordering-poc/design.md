@@ -77,6 +77,10 @@ Customer Orders tab and console fetch their state every 5 s with `setInterval` +
 ### D14. Tests
 Vitest for pure logic (transition table, Bill total, Traditional-layout pagination) and for API handlers against a test Postgres database (transaction rules, gate, races). UI verified by a scripted manual walkthrough in tasks.md.
 
+### D15. Landscape-only Traditional layout
+Effective layout = stored preference `traditional` AND `matchMedia("(orientation: landscape)")`, read via `useSyncExternalStore` (server snapshot: portrait → Modern, so upright phones never flash Traditional). Rotation re-renders without touching the stored preference. In Traditional, the page area is `100dvh` minus one compact top bar; the 4×2 grid uses equal `1fr` rows so a page never scrolls vertically. Cart, Orders, and options render as fixed overlays with internal scroll; the pager's scroll position is kept, so closing returns to the same page.
+*Alternative:* Fullscreen + `screen.orientation.lock("landscape")` – rejected: unsupported on iOS Safari in all versions (caniuse `mdn-api_screenorientation_lock`) and declined by the product owner.
+
 ## Risks / Trade-offs
 
 - [No auth: anyone with the URL can open the console or act on any table] → Accepted per scope; console path not linked from customer UI.
@@ -84,6 +88,7 @@ Vitest for pure logic (transition table, Bill total, Traditional-layout paginati
 - [Device ID in localStorage: private mode or cleared storage loses the cart] → Cart lines are discarded at session close anyway; per-tab fallback keeps the page usable.
 - [Neon cold start adds latency to the first request] → Accepted for a demo.
 - [Another device's unconfirmed cart is discarded when the table pays] → Warning + explicit "Pay anyway" before discarding (payment spec).
+- [Short landscape heights (~320 px) cramp 4×2 cards] → Clamp names to two lines and drop the image placeholder below a height threshold.
 - [Bill history grows unbounded] → Fine for a demo; history is a plain query on closed `table_sessions`, nothing extra stored.
 
 ## Migration Plan

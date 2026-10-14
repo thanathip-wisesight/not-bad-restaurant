@@ -151,6 +151,14 @@ describe("4.5 transitions", () => {
     await transitionItem(item.id, "start", "staff");
   });
 
+  it("records the time of the last status change", async () => {
+    const [item] = await confirmed();
+    await new Promise((r) => setTimeout(r, 20));
+    await transitionItem(item.id, "start", "staff");
+    const [after] = (await getTableOrders(5, A)).items;
+    expect(Date.parse(after.updatedAt)).toBeGreaterThan(Date.parse(item.updatedAt));
+  });
+
   it("cancel request after start is rejected with a clear message", async () => {
     const [item] = await confirmed();
     await transitionItem(item.id, "start", "staff");
